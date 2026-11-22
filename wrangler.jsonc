@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vybe",
+  "account_id": "d1846bad8069e6dddcd7c7a23cfbff4e",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2025-02-14",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./out",
+    "binding": "ASSETS"
+  }
+}
