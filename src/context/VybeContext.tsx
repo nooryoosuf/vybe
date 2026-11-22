@@ -19,12 +19,20 @@ interface VybeContextValue {
   toasts: ToastItem[];
   addToast: (toast: Omit<ToastItem, 'id'>) => void;
   dismissToast: (id: string) => void;
-  signInWithEmail: (email: string, password: string) => Promise<UserProfile>;
-  signUpWithEmail: (email: string, password: string, displayName: string) => Promise<UserProfile>;
+  signInWithEmail: (identifier: string, password: string) => Promise<UserProfile>;
+  signUpWithEmail: (params: {
+    displayName: string;
+    username: string;
+    email?: string;
+    password: string;
+    avatarUrl?: string;
+  }) => Promise<UserProfile>;
   signInWithGoogle: () => Promise<void>;
   continueAsGuest: (customName?: string) => Promise<UserProfile>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updatePreferences: (updates: Partial<UserPreferences>) => Promise<void>;
+  addFriend: (targetQuery: string) => Promise<boolean>;
+  removeFriend: (friendId: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthModalOpen: boolean;
   setAuthModalOpen: (open: boolean) => void;
@@ -34,7 +42,7 @@ interface VybeContextValue {
 
 const VybeContext = createContext<VybeContextValue | undefined>(undefined);
 
-const STORAGE_KEY = 'vybe_active_user_v1';
+const STORAGE_KEY = 'vybe_active_user_v2';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   reducedMotion: false,
@@ -68,17 +76,22 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
   const syncUserToServer = useCallback(async (profile: UserProfile) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-      await fetch('/api/state', {
+      const res = await fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'UPSERT_USER', user: profile }),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.user) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
+        }
+      }
     } catch {
       // Ignore network hiccup
     }
   }, []);
 
-  // Hydrate initial session from localStorage or Supabase Auth
   useEffect(() => {
     let mounted = true;
 
@@ -105,13 +118,16 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
                 sbUser.user_metadata?.full_name ||
                 sbUser.user_metadata?.display_name ||
                 sbUser.email?.split('@')[0] ||
-                'VYBE Member',
-              username: (sbUser.email?.split('@')[0] || 'member').replace(/[^a-zA-Z0-9_]/g, '').toLowerCase(),
+                'Member',
+              username: (sbUser.email?.split('@')[0] || 'member')
+                .replace(/[^a-zA-Z0-9_]/g, '')
+                .toLowerCase(),
               avatarUrl: sbUser.user_metadata?.avatar_url || AVATAR_PRESETS[0],
-              bio: 'Cinema enthusiast on VYBE.',
+              bio: 'Watching with friends on VYBE.',
               presenceStatus: 'online',
               accentColor: '#6D5DFB',
               isGuest: false,
+              friendIds: [],
               preferences: DEFAULT_PREFERENCES,
               createdAt: sbUser.created_at || new Date().toISOString(),
             };
@@ -131,80 +147,85 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
   }, [syncUserToServer]);
 
   const signInWithEmail = useCallback(
-    async (email: string, password: string): Promise<UserProfile> => {
-      const cleanEmail = email.trim().toLowerCase();
-      if (!cleanEmail || !password) {
-        throw new Error('Please enter both email and password.');
+    async (identifier: string, password: string): Promise<UserProfile> => {
+      const cleanId = identifier.trim().toLowerCase().replace(/^@/, '');
+      if (!cleanId || !password) {
+        throw new Error('Please enter your username (or email) and password.');
       }
 
       const supabase = getSupabaseBrowserClient();
-      if (supabase) {
+      if (supabase && cleanId.includes('@')) {
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
+          email: cleanId,
           password,
         });
         if (error) throw new Error(error.message);
         if (data.user) {
           const profile: UserProfile = {
             id: data.user.id,
-            email: data.user.email || cleanEmail,
+            email: data.user.email || cleanId,
             displayName:
-              data.user.user_metadata?.display_name ||
-              cleanEmail.split('@')[0],
-            username: cleanEmail.split('@')[0].replace(/[^a-z0-9_]/g, ''),
+              data.user.user_metadata?.display_name || cleanId.split('@')[0],
+            username: cleanId.split('@')[0].replace(/[^a-z0-9_]/g, ''),
             avatarUrl: data.user.user_metadata?.avatar_url || AVATAR_PRESETS[0],
-            bio: 'Cinema enthusiast on VYBE.',
+            bio: 'Watching with friends on VYBE.',
             presenceStatus: 'online',
             accentColor: '#6D5DFB',
             isGuest: false,
+            friendIds: [],
             preferences: DEFAULT_PREFERENCES,
             createdAt: new Date().toISOString(),
           };
           setUser(profile);
           await syncUserToServer(profile);
           addToast({
-            title: `Welcome back, ${profile.displayName}`,
-            description: 'Signed in via Supabase Auth.',
+            title: `Welcome back, ${profile.displayName}!`,
             variant: 'success',
           });
           return profile;
         }
       }
 
-      // Check server store for existing user or create authenticated session
-      const res = await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'LOGIN_EMAIL', email: cleanEmail }),
-      });
-      const data = await res.json();
-      if (data.user) {
-        const existing: UserProfile = {
-          ...data.user,
-          presenceStatus: 'online',
-        };
-        setUser(existing);
-        await syncUserToServer(existing);
-        addToast({
-          title: `Welcome back, ${existing.displayName}`,
-          description: 'Your watchlists and rooms are ready.',
-          variant: 'success',
+      try {
+        const res = await fetch('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'LOGIN_EMAIL', email: cleanId }),
         });
-        return existing;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            const existing: UserProfile = {
+              ...data.user,
+              presenceStatus: 'online',
+            };
+            setUser(existing);
+            await syncUserToServer(existing);
+            addToast({
+              title: `Welcome back, ${existing.displayName}!`,
+              description: `Signed in as @${existing.username}`,
+              variant: 'success',
+            });
+            return existing;
+          }
+        }
+      } catch {
+        // Fallback below
       }
 
-      const namePart = cleanEmail.split('@')[0];
-      const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+      const handle = cleanId.split('@')[0].replace(/[^a-z0-9_]/g, '') || 'user';
+      const displayName = handle.charAt(0).toUpperCase() + handle.slice(1);
       const newProfile: UserProfile = {
-        id: `usr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-        email: cleanEmail,
+        id: `usr-${handle}`,
+        email: cleanId.includes('@') ? cleanId : `${handle}@vybe.app`,
         displayName,
-        username: namePart.replace(/[^a-z0-9_]/g, '') || 'viewer',
-        avatarUrl: AVATAR_PRESETS[Math.floor(Math.random() * AVATAR_PRESETS.length)],
-        bio: 'Cinema lover & late-night watch party host.',
+        username: handle,
+        avatarUrl: AVATAR_PRESETS[0],
+        bio: 'Ready for movie night.',
         presenceStatus: 'online',
         accentColor: '#6D5DFB',
         isGuest: false,
+        friendIds: [],
         preferences: DEFAULT_PREFERENCES,
         createdAt: new Date().toISOString(),
       };
@@ -212,7 +233,7 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       await syncUserToServer(newProfile);
       addToast({
         title: `Signed in as ${newProfile.displayName}`,
-        description: 'Ready to host or join a watch party.',
+        description: `Your username is @${newProfile.username}`,
         variant: 'success',
       });
       return newProfile;
@@ -221,23 +242,41 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signUpWithEmail = useCallback(
-    async (email: string, password: string, displayName: string): Promise<UserProfile> => {
-      const cleanEmail = email.trim().toLowerCase();
-      const cleanName = displayName.trim() || cleanEmail.split('@')[0];
-      if (!cleanEmail || password.length < 6) {
-        throw new Error('Please provide a valid email and a password of at least 6 characters.');
+    async (params: {
+      displayName: string;
+      username: string;
+      email?: string;
+      password: string;
+      avatarUrl?: string;
+    }): Promise<UserProfile> => {
+      const cleanName = params.displayName.trim();
+      const cleanUsername = params.username
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, '')
+        .replace(/[^a-z0-9_]/g, '');
+
+      if (!cleanName || !cleanUsername) {
+        throw new Error('Please enter your name and choose a @username.');
+      }
+      if (params.password.length < 4) {
+        throw new Error('Please choose a password of at least 4 characters.');
       }
 
+      const cleanEmail =
+        params.email?.trim().toLowerCase() || `${cleanUsername}@vybe.app`;
+      const chosenAvatar = params.avatarUrl || AVATAR_PRESETS[0];
+
       const supabase = getSupabaseBrowserClient();
-      if (supabase) {
+      if (supabase && params.email?.includes('@')) {
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
-          password,
+          password: params.password,
           options: {
             data: {
               display_name: cleanName,
               full_name: cleanName,
-              avatar_url: AVATAR_PRESETS[0],
+              avatar_url: chosenAvatar,
             },
           },
         });
@@ -247,20 +286,21 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
             id: data.user.id,
             email: cleanEmail,
             displayName: cleanName,
-            username: cleanName.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-            avatarUrl: AVATAR_PRESETS[0],
-            bio: 'Cinema lover & watch party host.',
+            username: cleanUsername,
+            avatarUrl: chosenAvatar,
+            bio: 'Ready for movie night.',
             presenceStatus: 'online',
             accentColor: '#6D5DFB',
             isGuest: false,
+            friendIds: [],
             preferences: DEFAULT_PREFERENCES,
             createdAt: new Date().toISOString(),
           };
           setUser(profile);
           await syncUserToServer(profile);
           addToast({
-            title: 'Account created!',
-            description: `Welcome to VYBE, ${cleanName}.`,
+            title: `Account created for ${cleanName}!`,
+            description: `Friends can add you with @${cleanUsername}`,
             variant: 'success',
           });
           return profile;
@@ -268,23 +308,24 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       }
 
       const newProfile: UserProfile = {
-        id: `usr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `usr-${cleanUsername}`,
         email: cleanEmail,
         displayName: cleanName,
-        username: cleanName.toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'vybe_user',
-        avatarUrl: AVATAR_PRESETS[Math.floor(Math.random() * AVATAR_PRESETS.length)],
-        bio: 'Cinema lover & late-night watch party host.',
+        username: cleanUsername,
+        avatarUrl: chosenAvatar,
+        bio: 'Ready for movie night.',
         presenceStatus: 'online',
         accentColor: '#6D5DFB',
         isGuest: false,
+        friendIds: [],
         preferences: DEFAULT_PREFERENCES,
         createdAt: new Date().toISOString(),
       };
       setUser(newProfile);
       await syncUserToServer(newProfile);
       addToast({
-        title: 'Welcome to VYBE!',
-        description: `Profile created for ${cleanName}.`,
+        title: `Welcome to VYBE, ${cleanName}!`,
+        description: `Tell your friends to add @${cleanUsername}`,
         variant: 'success',
       });
       return newProfile;
@@ -310,44 +351,32 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-
-    // Local development Google account sign-in simulation when Supabase OAuth redirect is not configured
-    const googleProfile: UserProfile = {
-      id: `usr-google-${Date.now().toString(36)}`,
-      email: 'alex.rivera@gmail.com',
-      displayName: 'Alex Rivera',
-      username: 'alex_rivera',
-      avatarUrl: AVATAR_PRESETS[4],
-      bio: 'Signed in with Google • 4K Cinema Host',
-      presenceStatus: 'online',
-      accentColor: '#6D5DFB',
-      isGuest: false,
-      preferences: DEFAULT_PREFERENCES,
-      createdAt: new Date().toISOString(),
-    };
-    setUser(googleProfile);
-    await syncUserToServer(googleProfile);
     addToast({
-      title: 'Connected with Google',
-      description: `Signed in as ${googleProfile.displayName} (${googleProfile.email})`,
-      variant: 'success',
+      title: 'Create a Quick Account Instead',
+      description: 'Pick your name, @username, and avatar in the Create Account tab!',
     });
-  }, [addToast, syncUserToServer]);
+  }, [addToast]);
 
   const continueAsGuest = useCallback(
     async (customName?: string): Promise<UserProfile> => {
       const suffix = Math.floor(100 + Math.random() * 899);
-      const displayName = (customName && customName.trim()) || `Guest Viewer #${suffix}`;
+      const displayName = (customName && customName.trim()) || `Guest #${suffix}`;
+      const username =
+        displayName
+          .toLowerCase()
+          .replace(/[^a-z0-9_]/g, '')
+          .slice(0, 14) || `guest_${suffix}`;
       const guestProfile: UserProfile = {
-        id: `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-        email: `guest_${suffix}@vybe.local`,
+        id: `usr-${username}-${suffix}`,
+        email: `${username}@vybe.local`,
         displayName,
-        username: `guest_${suffix}`,
+        username,
         avatarUrl: AVATAR_PRESETS[suffix % AVATAR_PRESETS.length],
-        bio: 'Joining watch party as a guest.',
+        bio: 'Watching with friends.',
         presenceStatus: 'online',
         accentColor: '#6D5DFB',
         isGuest: true,
+        friendIds: [],
         preferences: DEFAULT_PREFERENCES,
         createdAt: new Date().toISOString(),
       };
@@ -355,7 +384,7 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       await syncUserToServer(guestProfile);
       addToast({
         title: `Joined as ${guestProfile.displayName}`,
-        description: 'You can customize your avatar or upgrade to a full account anytime.',
+        description: `Username: @${guestProfile.username}`,
       });
       return guestProfile;
     },
@@ -372,22 +401,8 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       setUser(updated);
       await syncUserToServer(updated);
 
-      const supabase = getSupabaseBrowserClient();
-      if (supabase && !updated.isGuest) {
-        await supabase.from('profiles').upsert({
-          id: updated.id,
-          display_name: updated.displayName,
-          username: updated.username,
-          avatar_url: updated.avatarUrl,
-          bio: updated.bio,
-          presence_status: updated.presenceStatus,
-          accent_color: updated.accentColor,
-        });
-      }
-
       addToast({
         title: 'Profile updated',
-        description: 'Your changes have been saved.',
         variant: 'success',
       });
     },
@@ -414,6 +429,82 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
     [addToast, syncUserToServer, user]
   );
 
+  const addFriend = useCallback(
+    async (targetQuery: string): Promise<boolean> => {
+      let activeUser = user;
+      if (!activeUser) {
+        setAuthModalOpen(true);
+        addToast({
+          title: 'Create an account first',
+          description: 'Pick a name and @username so friends can add you back.',
+          variant: 'warning',
+        });
+        return false;
+      }
+
+      try {
+        const res = await fetch('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ADD_FRIEND',
+            userId: activeUser.id,
+            targetQuery,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          addToast({
+            title: 'Could not add friend',
+            description: data.error || 'User not found.',
+            variant: 'error',
+          });
+          return false;
+        }
+        if (data.user) {
+          setUser(data.user);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
+        }
+        addToast({
+          title: `Added ${data.addedFriend?.displayName || targetQuery}!`,
+          description: 'You are now connected as friends.',
+          variant: 'success',
+        });
+        return true;
+      } catch {
+        addToast({
+          title: 'Network error adding friend',
+          variant: 'error',
+        });
+        return false;
+      }
+    },
+    [addToast, user]
+  );
+
+  const removeFriend = useCallback(
+    async (friendId: string) => {
+      if (!user) return;
+      const updated: UserProfile = {
+        ...user,
+        friendIds: (user.friendIds || []).filter((id) => id !== friendId),
+      };
+      setUser(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'REMOVE_FRIEND',
+          userId: user.id,
+          friendId,
+        }),
+      }).catch(() => {});
+      addToast({ title: 'Removed from friends list' });
+    },
+    [addToast, user]
+  );
+
   const signOut = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (supabase) {
@@ -423,7 +514,6 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     addToast({
       title: 'Signed out',
-      description: 'See you at the next screening!',
     });
   }, [addToast]);
 
@@ -442,6 +532,8 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
         continueAsGuest,
         updateProfile,
         updatePreferences,
+        addFriend,
+        removeFriend,
         signOut,
         isAuthModalOpen,
         setAuthModalOpen,

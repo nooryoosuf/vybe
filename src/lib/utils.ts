@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { AVATAR_PRESETS, CURATED_YOUTUBE_VIDEOS, SUPPORTED_NETFLIX_TITLES } from './constants';
-import { ChatMessage, ControlPermission, PlatformType, RoomPrivacy, WatchRoom } from '@/types/vybe';
+import { CURATED_YOUTUBE_VIDEOS, INITIAL_SITE_MOVIES, SUPPORTED_NETFLIX_TITLES } from './constants';
+import { ChatMessage, ControlPermission, PlatformType, RoomPrivacy, SiteMovieItem, WatchRoom } from '@/types/vybe';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -148,144 +148,43 @@ export function generateRoomCode(): string {
 }
 
 // ============================================================================
-// Client-Side Resilient Room Cache (guarantees zero "Failed to fetch" errors
-// even during dev server restarts or offline multi-tab sessions)
+// Client-Side Resilient Room & Movie Cache
 // ============================================================================
-const LOCAL_ROOMS_KEY = 'vybe_local_rooms_cache_v1';
-const LOCAL_MESSAGES_KEY = 'vybe_local_messages_cache_v1';
+const LOCAL_ROOMS_KEY = 'vybe_local_rooms_clean_v2';
+const LOCAL_MESSAGES_KEY = 'vybe_local_messages_clean_v2';
+const LOCAL_MOVIES_KEY = 'vybe_local_site_movies_v2';
 
 export function getSeedRoomsClient(): Record<string, WatchRoom> {
-  const nowIso = new Date().toISOString();
-  const nowMs = Date.now();
-  return {
-    'VYB-4K1': {
-      id: 'room-vyb-4k1',
-      code: 'VYB-4K1',
-      title: 'Midnight Blender 4K Cinema Showcase',
-      description: 'Synchronized 60fps open movie premiere night — grab popcorn & drop reactions!',
-      hostId: 'usr-elena-host',
-      hostName: 'Elena Vance',
-      hostAvatar: AVATAR_PRESETS[0],
-      platform: 'youtube',
-      privacy: 'public',
-      hasPassword: false,
-      allowGuests: true,
-      waitingRoomEnabled: false,
-      isLocked: false,
-      isActive: true,
-      participantLimit: 25,
-      controlPermission: 'everyone',
-      playback: {
-        roomId: 'room-vyb-4k1',
-        platform: 'youtube',
-        videoId: CURATED_YOUTUBE_VIDEOS[0].videoId,
-        videoTitle: CURATED_YOUTUBE_VIDEOS[0].title,
-        videoThumbnail: CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl,
-        isPlaying: false,
-        currentTime: 18,
-        playbackRate: 1,
-        seq: 1,
-        updatedBy: 'usr-elena-host',
-        updatedByName: 'Elena Vance',
-        updatedAt: nowMs,
-      },
-      participants: [
-        {
-          userId: 'usr-elena-host',
-          displayName: 'Elena Vance',
-          username: 'elena_v',
-          avatarUrl: AVATAR_PRESETS[0],
-          role: 'host',
-          status: 'joined',
-          isGuest: false,
-          isChatMuted: false,
-          isVoiceMuted: true,
-          isCameraOn: false,
-          isSpeaking: false,
-          reportedTime: 18,
-          syncDrift: 0,
-          extensionConnected: true,
-          joinedAt: nowIso,
-          lastActiveAt: nowMs,
-        },
-      ],
-      queue: [
-        {
-          id: 'q-sintel',
-          roomId: 'room-vyb-4k1',
-          platform: 'youtube',
-          videoId: CURATED_YOUTUBE_VIDEOS[1].videoId,
-          title: CURATED_YOUTUBE_VIDEOS[1].title,
-          thumbnailUrl: CURATED_YOUTUBE_VIDEOS[1].thumbnailUrl,
-          durationLabel: CURATED_YOUTUBE_VIDEOS[1].durationLabel,
-          addedById: 'usr-elena-host',
-          addedByName: 'Elena Vance',
-          position: 0,
-          score: 4,
-          upvoterIds: ['usr-elena-host'],
-          downvoterIds: [],
-          createdAt: nowIso,
-        },
-      ],
-      createdAt: nowIso,
-    },
-    'NFX-808': {
-      id: 'room-nfx-808',
-      code: 'NFX-808',
-      title: 'Stranger Things & Sci-Fi Mystery Night',
-      description: 'Connect your VYBE Chrome Extension and sign into Netflix to sync playback.',
-      hostId: 'usr-aria-net',
-      hostName: 'Aria Thorne',
-      hostAvatar: AVATAR_PRESETS[2],
-      platform: 'netflix',
-      privacy: 'public',
-      hasPassword: false,
-      allowGuests: true,
-      waitingRoomEnabled: false,
-      isLocked: false,
-      isActive: true,
-      participantLimit: 15,
-      controlPermission: 'everyone',
-      playback: {
-        roomId: 'room-nfx-808',
-        platform: 'netflix',
-        videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-        videoTitle: SUPPORTED_NETFLIX_TITLES[0].title,
-        videoThumbnail: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
-        netflixWatchId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-        isPlaying: false,
-        currentTime: 142,
-        playbackRate: 1,
-        seq: 1,
-        updatedBy: 'usr-aria-net',
-        updatedByName: 'Aria Thorne',
-        updatedAt: nowMs,
-      },
-      participants: [
-        {
-          userId: 'usr-aria-net',
-          displayName: 'Aria Thorne',
-          username: 'aria_t',
-          avatarUrl: AVATAR_PRESETS[2],
-          role: 'host',
-          status: 'joined',
-          isGuest: false,
-          isChatMuted: false,
-          isVoiceMuted: true,
-          isCameraOn: false,
-          isSpeaking: false,
-          reportedTime: 142,
-          syncDrift: 0,
-          extensionConnected: true,
-          netflixReady: true,
-          joinedAt: nowIso,
-          lastActiveAt: nowMs,
-        },
-      ],
-      queue: [],
-      createdAt: nowIso,
-    },
-  };
+  return {};
+}
+
+export function getLocalSiteMovies(): SiteMovieItem[] {
+  if (typeof window === 'undefined') return [...INITIAL_SITE_MOVIES];
+  try {
+    const raw = localStorage.getItem(LOCAL_MOVIES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as SiteMovieItem[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return [...INITIAL_SITE_MOVIES];
+}
+
+export function saveLocalSiteMovie(movie: SiteMovieItem): SiteMovieItem[] {
+  const current = getLocalSiteMovies().filter((m) => m.id !== movie.id);
+  const updated = [movie, ...current];
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_MOVIES_KEY, JSON.stringify(updated));
+    } catch {
+      // Ignore
+    }
+  }
+  return updated;
 }
 
 export function getLocalRoomsMap(): Record<string, WatchRoom> {

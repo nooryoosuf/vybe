@@ -16,8 +16,22 @@ export interface UserProfile {
   currentRoomCode?: string | null;
   accentColor: string;
   isGuest: boolean;
+  friendIds?: string[];
   preferences: UserPreferences;
   createdAt: string;
+}
+
+export interface SiteMovieItem {
+  id: string;
+  title: string;
+  genre: string;
+  durationLabel: string;
+  year: string;
+  platform: PlatformType;
+  videoId: string;
+  thumbnailUrl: string;
+  description: string;
+  addedBy?: string;
 }
 
 export interface UserPreferences {

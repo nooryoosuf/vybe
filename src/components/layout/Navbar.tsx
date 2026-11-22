@@ -74,14 +74,7 @@ export function Navbar({
               }`}
             >
               <LayoutDashboard className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-vybe-accentLight" />
-              <span>Lobby</span>
-            </Link>
-            <Link
-              href="/room/VYB-4K1"
-              className="hidden md:flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-white/[0.06] transition-all"
-            >
-              <Radio className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-              <span>Live Room</span>
+              <span>Movies & Lobby</span>
             </Link>
           </nav>
         </div>

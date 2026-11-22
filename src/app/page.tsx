@@ -341,10 +341,10 @@ export default function LandingPage() {
 
             <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
               <Link
-                href="/room/VYB-4K1"
+                href="/dashboard"
                 className="text-xs font-semibold text-vybe-accentLight hover:underline"
               >
-                Explore Live YouTube Room →
+                Browse Ready-to-Watch Movies →
               </Link>
               <GlowButton
                 variant="primary"
@@ -370,7 +370,7 @@ export default function LandingPage() {
                   <span>Netflix</span>
                 </div>
                 <span className="rounded-full vybe-glass-pill px-3 py-1 text-xs font-medium text-slate-200">
-                  Chrome Extension
+                  Tab Stream & Extension
                 </span>
               </div>
 
@@ -378,7 +378,7 @@ export default function LandingPage() {
                 Synced Netflix Sessions
               </h3>
               <p className="mt-2 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-                Each participant streams through their own Netflix account while the VYBE Chrome Extension keeps everyone’s playback aligned to the same second.
+                Sign into Netflix and stream your tab directly into the VYBE room, or use the Chrome Extension to keep everyone’s playback aligned to the same second.
               </p>
 
               <ul className="mt-4 sm:mt-5 space-y-2.5 text-xs text-slate-300">
@@ -388,28 +388,28 @@ export default function LandingPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Live connection status and setup instructions</span>
+                  <span>Stream your Netflix tab directly inside the VYBE room</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Detects unsupported pages or disconnected tabs gracefully</span>
+                  <span>Or use the Teleparty-style Chrome Extension sidebar</span>
                 </li>
               </ul>
             </div>
 
             <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
               <Link
-                href="/room/NFX-808"
+                href="/dashboard"
                 className="text-xs font-semibold text-rose-400 hover:underline"
               >
-                Explore Netflix Room →
+                Browse Netflix Titles →
               </Link>
               <GlowButton
                 variant="secondary"
-                onClick={() => router.push('/room/NFX-808')}
+                onClick={() => router.push('/dashboard')}
                 className="w-full sm:w-auto py-2 px-5 text-xs"
               >
-                Open Netflix Room
+                Open Movie Lobby
               </GlowButton>
             </div>
           </motion.div>

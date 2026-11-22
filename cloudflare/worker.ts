@@ -5,12 +5,14 @@ import {
   RoomInvitation,
   RoomParticipant,
   SavedWatchlist,
+  SiteMovieItem,
   UserProfile,
   WatchRoom,
 } from '../src/types/vybe';
 import {
   AVATAR_PRESETS,
   CURATED_YOUTUBE_VIDEOS,
+  INITIAL_SITE_MOVIES,
   SUPPORTED_NETFLIX_TITLES,
 } from '../src/lib/constants';
 import { generateRoomCode } from '../src/lib/utils';
@@ -27,6 +29,7 @@ interface EdgeDb {
   messagesByRoom: Record<string, ChatMessage[]>;
   watchlistsByUser: Record<string, SavedWatchlist[]>;
   invitations: RoomInvitation[];
+  siteMovies: SiteMovieItem[];
 }
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
@@ -34,341 +37,13 @@ type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => v
 const listeners = new Set<SseListener>();
 
 function createInitialDb(): EdgeDb {
-  const nowIso = new Date().toISOString();
-  const nowMs = Date.now();
-
-  const hostElena: UserProfile = {
-    id: 'usr-elena-host',
-    email: 'elena@vybe.cinema',
-    displayName: 'Elena Vance',
-    username: 'elena_v',
-    avatarUrl: AVATAR_PRESETS[0],
-    bio: 'Sci-Fi & A24 curator. Hosting nightly 4K screenings.',
-    presenceStatus: 'watching',
-    currentRoomCode: 'VYB-4K1',
-    accentColor: '#6D5DFB',
-    isGuest: false,
-    preferences: {
-      reducedMotion: false,
-      reactionSounds: false,
-      autoSyncThresholdSec: 2.0,
-      floatingChatDefault: false,
-      showPresenceToFriends: true,
-      defaultRoomPrivacy: 'public',
-    },
-    createdAt: nowIso,
-  };
-
-  const friendMarcus: UserProfile = {
-    id: 'usr-marcus-co',
-    email: 'marcus@vybe.cinema',
-    displayName: 'Marcus Chen',
-    username: 'marcus_c',
-    avatarUrl: AVATAR_PRESETS[1],
-    bio: 'Sound designer & animation nerd.',
-    presenceStatus: 'watching',
-    currentRoomCode: 'VYB-4K1',
-    accentColor: '#4F46E5',
-    isGuest: false,
-    preferences: {
-      reducedMotion: false,
-      reactionSounds: false,
-      autoSyncThresholdSec: 2.0,
-      floatingChatDefault: false,
-      showPresenceToFriends: true,
-      defaultRoomPrivacy: 'public',
-    },
-    createdAt: nowIso,
-  };
-
-  const friendAria: UserProfile = {
-    id: 'usr-aria-net',
-    email: 'aria@vybe.cinema',
-    displayName: 'Aria Thorne',
-    username: 'aria_t',
-    avatarUrl: AVATAR_PRESETS[2],
-    bio: 'Late night thriller marathons on Netflix.',
-    presenceStatus: 'watching',
-    currentRoomCode: 'NFX-808',
-    accentColor: '#9333EA',
-    isGuest: false,
-    preferences: {
-      reducedMotion: false,
-      reactionSounds: false,
-      autoSyncThresholdSec: 2.0,
-      floatingChatDefault: false,
-      showPresenceToFriends: true,
-      defaultRoomPrivacy: 'public',
-    },
-    createdAt: nowIso,
-  };
-
-  const mainYoutubeRoom: WatchRoom = {
-    id: 'room-vyb-4k1',
-    code: 'VYB-4K1',
-    title: 'Midnight Blender 4K Cinema Showcase',
-    description: 'Synchronized 60fps open movie premiere night — grab popcorn & drop reactions!',
-    hostId: hostElena.id,
-    hostName: hostElena.displayName,
-    hostAvatar: hostElena.avatarUrl,
-    platform: 'youtube',
-    privacy: 'public',
-    hasPassword: false,
-    allowGuests: true,
-    waitingRoomEnabled: false,
-    isLocked: false,
-    isActive: true,
-    participantLimit: 25,
-    controlPermission: 'everyone',
-    playback: {
-      roomId: 'room-vyb-4k1',
-      platform: 'youtube',
-      videoId: CURATED_YOUTUBE_VIDEOS[0].videoId,
-      videoTitle: CURATED_YOUTUBE_VIDEOS[0].title,
-      videoThumbnail: CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl,
-      isPlaying: false,
-      currentTime: 18,
-      playbackRate: 1,
-      seq: 1,
-      updatedBy: hostElena.id,
-      updatedByName: hostElena.displayName,
-      updatedAt: nowMs,
-    },
-    participants: [
-      {
-        userId: hostElena.id,
-        displayName: hostElena.displayName,
-        username: hostElena.username,
-        avatarUrl: hostElena.avatarUrl,
-        role: 'host',
-        status: 'joined',
-        isGuest: false,
-        isChatMuted: false,
-        isVoiceMuted: true,
-        isCameraOn: false,
-        isSpeaking: false,
-        reportedTime: 18,
-        syncDrift: 0,
-        extensionConnected: true,
-        joinedAt: nowIso,
-        lastActiveAt: nowMs,
-      },
-      {
-        userId: friendMarcus.id,
-        displayName: friendMarcus.displayName,
-        username: friendMarcus.username,
-        avatarUrl: friendMarcus.avatarUrl,
-        role: 'cohost',
-        status: 'joined',
-        isGuest: false,
-        isChatMuted: false,
-        isVoiceMuted: true,
-        isCameraOn: false,
-        isSpeaking: false,
-        reportedTime: 18.1,
-        syncDrift: 0.1,
-        extensionConnected: true,
-        joinedAt: nowIso,
-        lastActiveAt: nowMs,
-      },
-    ],
-    queue: [
-      {
-        id: 'q-sintel',
-        roomId: 'room-vyb-4k1',
-        platform: 'youtube',
-        videoId: CURATED_YOUTUBE_VIDEOS[1].videoId,
-        title: CURATED_YOUTUBE_VIDEOS[1].title,
-        thumbnailUrl: CURATED_YOUTUBE_VIDEOS[1].thumbnailUrl,
-        durationLabel: CURATED_YOUTUBE_VIDEOS[1].durationLabel,
-        addedById: hostElena.id,
-        addedByName: hostElena.displayName,
-        position: 0,
-        score: 4,
-        upvoterIds: [hostElena.id, friendMarcus.id, friendAria.id],
-        downvoterIds: [],
-        createdAt: nowIso,
-      },
-      {
-        id: 'q-tears',
-        roomId: 'room-vyb-4k1',
-        platform: 'youtube',
-        videoId: CURATED_YOUTUBE_VIDEOS[2].videoId,
-        title: CURATED_YOUTUBE_VIDEOS[2].title,
-        thumbnailUrl: CURATED_YOUTUBE_VIDEOS[2].thumbnailUrl,
-        durationLabel: CURATED_YOUTUBE_VIDEOS[2].durationLabel,
-        addedById: friendMarcus.id,
-        addedByName: friendMarcus.displayName,
-        position: 1,
-        score: 2,
-        upvoterIds: [friendMarcus.id, hostElena.id],
-        downvoterIds: [],
-        createdAt: nowIso,
-      },
-    ],
-    createdAt: nowIso,
-  };
-
-  const netflixRoom: WatchRoom = {
-    id: 'room-nfx-808',
-    code: 'NFX-808',
-    title: 'Stranger Things & Sci-Fi Mystery Night',
-    description: 'Connect your VYBE Chrome Extension and sign into Netflix to sync playback.',
-    hostId: friendAria.id,
-    hostName: friendAria.displayName,
-    hostAvatar: friendAria.avatarUrl,
-    platform: 'netflix',
-    privacy: 'public',
-    hasPassword: false,
-    allowGuests: true,
-    waitingRoomEnabled: false,
-    isLocked: false,
-    isActive: true,
-    participantLimit: 15,
-    controlPermission: 'everyone',
-    playback: {
-      roomId: 'room-nfx-808',
-      platform: 'netflix',
-      videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-      videoTitle: SUPPORTED_NETFLIX_TITLES[0].title,
-      videoThumbnail: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
-      netflixWatchId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-      isPlaying: false,
-      currentTime: 142,
-      playbackRate: 1,
-      seq: 1,
-      updatedBy: friendAria.id,
-      updatedByName: friendAria.displayName,
-      updatedAt: nowMs,
-    },
-    participants: [
-      {
-        userId: friendAria.id,
-        displayName: friendAria.displayName,
-        username: friendAria.username,
-        avatarUrl: friendAria.avatarUrl,
-        role: 'host',
-        status: 'joined',
-        isGuest: false,
-        isChatMuted: false,
-        isVoiceMuted: false,
-        isCameraOn: false,
-        isSpeaking: false,
-        reportedTime: 142,
-        syncDrift: 0,
-        extensionConnected: true,
-        netflixReady: true,
-        joinedAt: nowIso,
-        lastActiveAt: nowMs,
-      },
-    ],
-    queue: [
-      {
-        id: 'q-nfx-dark',
-        roomId: 'room-nfx-808',
-        platform: 'netflix',
-        videoId: SUPPORTED_NETFLIX_TITLES[1].watchId,
-        title: SUPPORTED_NETFLIX_TITLES[1].title,
-        thumbnailUrl: SUPPORTED_NETFLIX_TITLES[1].posterUrl,
-        durationLabel: SUPPORTED_NETFLIX_TITLES[1].durationLabel,
-        netflixSynopsis: SUPPORTED_NETFLIX_TITLES[1].synopsis,
-        addedById: friendAria.id,
-        addedByName: friendAria.displayName,
-        position: 0,
-        score: 3,
-        upvoterIds: [friendAria.id, hostElena.id],
-        downvoterIds: [],
-        createdAt: nowIso,
-      },
-    ],
-    createdAt: nowIso,
-  };
-
   return {
-    users: {
-      [hostElena.id]: hostElena,
-      [friendMarcus.id]: friendMarcus,
-      [friendAria.id]: friendAria,
-    },
-    rooms: {
-      [mainYoutubeRoom.code]: mainYoutubeRoom,
-      [netflixRoom.code]: netflixRoom,
-    },
-    messagesByRoom: {
-      [mainYoutubeRoom.code]: [
-        {
-          id: 'msg-seed-1',
-          roomId: mainYoutubeRoom.id,
-          userId: hostElena.id,
-          senderName: hostElena.displayName,
-          senderAvatar: hostElena.avatarUrl,
-          senderRole: 'host',
-          type: 'text',
-          content: 'Welcome everyone! We have Big Buck Bunny 4K loaded first, and Sintel + Tears of Steel queued next.',
-          reactions: { '🔥': [friendMarcus.id], '❤️': [hostElena.id] },
-          createdAt: nowIso,
-        },
-      ],
-      [netflixRoom.code]: [
-        {
-          id: 'msg-nfx-1',
-          roomId: netflixRoom.id,
-          userId: friendAria.id,
-          senderName: friendAria.displayName,
-          senderAvatar: friendAria.avatarUrl,
-          senderRole: 'host',
-          type: 'text',
-          content: 'Make sure the VYBE Chrome Extension is connected before we start Episode 1!',
-          reactions: { '🔥': [friendAria.id] },
-          createdAt: nowIso,
-        },
-      ],
-    },
-    watchlistsByUser: {
-      default: [
-        {
-          id: 'wl-default-1',
-          ownerId: 'global-seed',
-          title: 'Weekend Sci-Fi & Animation Anthology',
-          description: 'Our group favorites ready to launch into a watch party at any time.',
-          items: [
-            {
-              id: 'wli-1',
-              platform: 'youtube',
-              videoId: CURATED_YOUTUBE_VIDEOS[2].videoId,
-              title: CURATED_YOUTUBE_VIDEOS[2].title,
-              thumbnailUrl: CURATED_YOUTUBE_VIDEOS[2].thumbnailUrl,
-              durationLabel: CURATED_YOUTUBE_VIDEOS[2].durationLabel,
-              addedAt: nowIso,
-            },
-            {
-              id: 'wli-2',
-              platform: 'netflix',
-              videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-              title: SUPPORTED_NETFLIX_TITLES[0].title,
-              thumbnailUrl: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
-              durationLabel: SUPPORTED_NETFLIX_TITLES[0].durationLabel,
-              addedAt: nowIso,
-            },
-          ],
-          createdAt: nowIso,
-        },
-      ],
-    },
-    invitations: [
-      {
-        id: 'inv-seed-1',
-        roomId: mainYoutubeRoom.id,
-        roomCode: mainYoutubeRoom.code,
-        roomTitle: mainYoutubeRoom.title,
-        platform: 'youtube',
-        senderId: hostElena.id,
-        senderName: hostElena.displayName,
-        senderAvatar: hostElena.avatarUrl,
-        status: 'pending',
-        createdAt: nowIso,
-      },
-    ],
+    users: {},
+    rooms: {},
+    messagesByRoom: {},
+    watchlistsByUser: {},
+    invitations: [],
+    siteMovies: [...INITIAL_SITE_MOVIES],
   };
 }
 
@@ -454,20 +129,92 @@ export default {
           .filter((r) => r.isActive)
           .map(({ password, ...safe }) => safe);
         const users = Object.values(db.users);
-        const watchlists = db.watchlistsByUser[userId] || db.watchlistsByUser['default'] || [];
-        const invitations = db.invitations;
-        return jsonResponse({ rooms, users, watchlists, invitations });
+        const watchlists = db.watchlistsByUser[userId] || [];
+        const invitations = db.invitations.filter(
+          (inv) =>
+            !inv.recipientId ||
+            inv.recipientId === userId ||
+            inv.recipientEmail?.toLowerCase() === db.users[userId]?.username?.toLowerCase() ||
+            inv.recipientEmail?.toLowerCase() === db.users[userId]?.email?.toLowerCase()
+        );
+        return jsonResponse({
+          rooms,
+          users,
+          watchlists,
+          invitations,
+          siteMovies: db.siteMovies?.length ? db.siteMovies : INITIAL_SITE_MOVIES,
+        });
       }
       if (req.method === 'POST') {
         const body = (await req.json()) as Record<string, any>;
         if (body.action === 'UPSERT_USER' && body.user?.id) {
-          db.users[body.user.id] = { ...(db.users[body.user.id] || {}), ...body.user };
+          const existing = db.users[body.user.id];
+          db.users[body.user.id] = {
+            ...(existing || {}),
+            ...body.user,
+            friendIds: body.user.friendIds || existing?.friendIds || [],
+          };
           return jsonResponse({ user: db.users[body.user.id] });
         }
         if (body.action === 'LOGIN_EMAIL') {
-          const email = String(body.email || '').trim().toLowerCase();
-          const found = Object.values(db.users).find((u) => u.email?.toLowerCase() === email);
+          const identifier = String(body.email || '')
+            .trim()
+            .toLowerCase()
+            .replace(/^@/, '');
+          const found = Object.values(db.users).find(
+            (u) =>
+              u.email?.toLowerCase() === identifier ||
+              u.username?.toLowerCase() === identifier
+          );
           return jsonResponse({ user: found || null });
+        }
+        if (body.action === 'ADD_FRIEND') {
+          const userId = String(body.userId || '');
+          const cleanQuery = String(body.targetQuery || '')
+            .trim()
+            .toLowerCase()
+            .replace(/^@/, '');
+          const targetUser = Object.values(db.users).find(
+            (u) =>
+              u.id !== userId &&
+              (u.id.toLowerCase() === cleanQuery ||
+                u.username?.toLowerCase() === cleanQuery ||
+                u.displayName?.toLowerCase() === cleanQuery ||
+                u.email?.toLowerCase() === cleanQuery)
+          );
+          if (!targetUser) {
+            return jsonResponse(
+              {
+                error: `No user found with "@${cleanQuery}". Ask your friend to create an account first!`,
+              },
+              404
+            );
+          }
+          if (db.users[userId]) {
+            const setA = new Set(db.users[userId].friendIds || []);
+            setA.add(targetUser.id);
+            db.users[userId].friendIds = Array.from(setA);
+          }
+          const setB = new Set(targetUser.friendIds || []);
+          setB.add(userId);
+          targetUser.friendIds = Array.from(setB);
+          return jsonResponse({
+            user: db.users[userId],
+            addedFriend: targetUser,
+          });
+        }
+        if (body.action === 'REMOVE_FRIEND') {
+          const { userId, friendId } = body;
+          if (db.users[userId]) {
+            db.users[userId].friendIds = (db.users[userId].friendIds || []).filter(
+              (id) => id !== friendId
+            );
+          }
+          return jsonResponse({ user: db.users[userId] });
+        }
+        if (body.action === 'ADD_SITE_MOVIE' && body.movie) {
+          db.siteMovies.unshift(body.movie);
+          return jsonResponse({ siteMovies: db.siteMovies });
         }
         if (body.action === 'SAVE_WATCHLIST') {
           db.watchlistsByUser[body.userId || 'default'] = [body.watchlist];

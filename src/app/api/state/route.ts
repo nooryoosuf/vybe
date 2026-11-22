@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getVybeServerStore } from '@/lib/server/vybeStore';
-import { RoomInvitation, SavedWatchlist, UserProfile } from '@/types/vybe';
+import {
+  RoomInvitation,
+  SavedWatchlist,
+  SiteMovieItem,
+  UserProfile,
+} from '@/types/vybe';
+import { INITIAL_SITE_MOVIES } from '@/lib/constants';
 
 export async function GET(req: NextRequest) {
   const store = getVybeServerStore();
@@ -13,11 +19,14 @@ export async function GET(req: NextRequest) {
 
   const users = Object.values(db.users).map(({ passwordHash, ...safeUser }) => safeUser);
 
-  const userWatchlists =
-    db.watchlistsByUser[userId] || db.watchlistsByUser['default'] || [];
+  const userWatchlists = db.watchlistsByUser[userId] || [];
 
   const invitations = db.invitations.filter(
-    (inv) => !inv.recipientId || inv.recipientId === userId || inv.status === 'pending'
+    (inv) =>
+      !inv.recipientId ||
+      inv.recipientId === userId ||
+      inv.recipientEmail?.toLowerCase() === db.users[userId]?.username?.toLowerCase() ||
+      inv.recipientEmail?.toLowerCase() === db.users[userId]?.email?.toLowerCase()
   );
 
   return NextResponse.json({
@@ -25,6 +34,7 @@ export async function GET(req: NextRequest) {
     users,
     watchlists: userWatchlists,
     invitations,
+    siteMovies: db.siteMovies?.length ? db.siteMovies : INITIAL_SITE_MOVIES,
   });
 }
 
@@ -39,22 +49,29 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid user payload' }, { status: 400 });
       }
       store.mutate((db) => {
+        const existing = db.users[user.id];
         db.users[user.id] = {
-          ...(db.users[user.id] || {}),
+          ...(existing || {}),
           ...user,
+          friendIds: user.friendIds || existing?.friendIds || [],
         };
       });
       return NextResponse.json({ user: store.getDb().users[user.id] });
     }
 
     if (body.action === 'LOGIN_EMAIL') {
-      const email = String(body.email || '').trim().toLowerCase();
-      if (!email) {
-        return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+      const identifier = String(body.email || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, '');
+      if (!identifier) {
+        return NextResponse.json({ error: 'Username or email is required' }, { status: 400 });
       }
       const db = store.getDb();
       const existing = Object.values(db.users).find(
-        (u) => u.email?.toLowerCase() === email
+        (u) =>
+          u.email?.toLowerCase() === identifier ||
+          u.username?.toLowerCase() === identifier
       );
       if (existing) {
         const { passwordHash, ...safeUser } = existing;
@@ -63,10 +80,88 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ user: null });
     }
 
+    if (body.action === 'ADD_FRIEND') {
+      const { userId, targetQuery } = body as {
+        userId: string;
+        targetQuery: string;
+      };
+      const cleanQuery = String(targetQuery || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, '');
+      if (!cleanQuery) {
+        return NextResponse.json({ error: 'Enter a friend username' }, { status: 400 });
+      }
+
+      const db = store.getDb();
+      const me = db.users[userId];
+      const targetUser = Object.values(db.users).find(
+        (u) =>
+          u.id !== userId &&
+          (u.id.toLowerCase() === cleanQuery ||
+            u.username?.toLowerCase() === cleanQuery ||
+            u.displayName?.toLowerCase() === cleanQuery ||
+            u.email?.toLowerCase() === cleanQuery)
+      );
+
+      if (!targetUser) {
+        return NextResponse.json(
+          {
+            error: `No user found with username "@${cleanQuery}". Ask your friend to sign up first!`,
+          },
+          { status: 404 }
+        );
+      }
+
+      store.mutate((state) => {
+        if (state.users[userId]) {
+          const myFriends = new Set(state.users[userId].friendIds || []);
+          myFriends.add(targetUser.id);
+          state.users[userId].friendIds = Array.from(myFriends);
+        }
+        if (state.users[targetUser.id] && me) {
+          const theirFriends = new Set(state.users[targetUser.id].friendIds || []);
+          theirFriends.add(userId);
+          state.users[targetUser.id].friendIds = Array.from(theirFriends);
+        }
+      });
+
+      return NextResponse.json({
+        user: store.getDb().users[userId],
+        addedFriend: targetUser,
+      });
+    }
+
+    if (body.action === 'REMOVE_FRIEND') {
+      const { userId, friendId } = body as { userId: string; friendId: string };
+      store.mutate((state) => {
+        if (state.users[userId]) {
+          state.users[userId].friendIds = (state.users[userId].friendIds || []).filter(
+            (id) => id !== friendId
+          );
+        }
+      });
+      return NextResponse.json({ user: store.getDb().users[userId] });
+    }
+
+    if (body.action === 'ADD_SITE_MOVIE') {
+      const movie = body.movie as SiteMovieItem;
+      if (!movie || !movie.title || !movie.videoId) {
+        return NextResponse.json({ error: 'Invalid movie details' }, { status: 400 });
+      }
+      store.mutate((state) => {
+        if (!Array.isArray(state.siteMovies)) {
+          state.siteMovies = [...INITIAL_SITE_MOVIES];
+        }
+        state.siteMovies.unshift(movie);
+      });
+      return NextResponse.json({ siteMovies: store.getDb().siteMovies });
+    }
+
     if (body.action === 'SAVE_WATCHLIST') {
       const { userId, watchlist } = body as { userId: string; watchlist: SavedWatchlist };
       store.mutate((db) => {
-        const current = db.watchlistsByUser[userId] || [...(db.watchlistsByUser['default'] || [])];
+        const current = db.watchlistsByUser[userId] || [];
         const idx = current.findIndex((w) => w.id === watchlist.id);
         if (idx >= 0) {
           current[idx] = watchlist;
