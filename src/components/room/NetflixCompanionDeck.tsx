@@ -370,83 +370,121 @@ export function NetflixCompanionDeck({
 
         {/* Slide-Down Episode & Video File Loader Drawer (Opens on "Episodes / Video File") */}
         {showSourceDrawer && (
-          <div className="absolute inset-x-0 top-0 z-30 bg-[#0D0F18]/95 backdrop-blur-2xl border-b border-white/15 p-3.5 sm:p-4 space-y-3 shadow-2xl max-h-full overflow-y-auto">
+          <div className="absolute inset-x-0 top-0 z-30 bg-[#0D0F18]/95 backdrop-blur-2xl border-b border-white/15 p-3.5 sm:p-5 space-y-4 shadow-2xl max-h-full overflow-y-auto">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-white">
-                {titleMeta.title} — Video Source & Episodes
-              </span>
+              <div>
+                <span className="text-sm font-bold text-white block">
+                  {titleMeta.title}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Choose how you want to watch the real episode with your friends:
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowSourceDrawer(false)}
-                className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-slate-300 hover:text-white"
+                className="rounded-full bg-white/10 hover:bg-white/20 px-3 py-1 text-xs font-semibold text-slate-200 transition"
               >
-                Close
+                Close Drawer
               </button>
             </div>
 
-            {/* 1. Load Local Downloaded Movie File (.mp4 / .mkv) or Paste Direct Video URL */}
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="sm:col-span-4 inline-flex items-center justify-center gap-1.5 rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-3.5 py-2 text-xs font-bold text-white transition"
-              >
-                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">
-                  {localFileName ? `File: ${localFileName}` : 'Load .MP4 / .MKV File'}
-                </span>
-              </button>
-
-              <form
-                onSubmit={handleSaveDirectStreamUrl}
-                className="sm:col-span-5 flex items-center gap-1.5 rounded-full vybe-glass-pill px-3 py-1"
-              >
-                <Link2 className="h-3.5 w-3.5 text-vybe-accentLight shrink-0" />
-                <input
-                  type="text"
-                  value={directUrlInput}
-                  onChange={(e) => setDirectUrlInput(e.target.value)}
-                  placeholder="Or paste direct .mp4 / .m3u8 video link"
-                  className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  className="rounded-full bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[10px] font-bold text-white shrink-0"
-                >
-                  Play URL
-                </button>
-              </form>
-
-              <div className="sm:col-span-3 flex items-center gap-1.5">
+            {/* 3 Clear Ways to Watch Full Episodes */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Method 1: Local File (.mp4 / .mkv) */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex flex-col justify-between space-y-2.5">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-vybe-accentLight">
+                    <FolderOpen className="h-4 w-4" />
+                    <span>1. Load Downloaded Episode</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300/80 mt-1">
+                    Have the episode downloaded on your PC or phone? Load the .mp4 or .mkv file directly.
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={handleStartTabCast}
-                  className="flex-1 inline-flex items-center justify-center gap-1 rounded-full vybe-glass-pill hover:bg-white/10 px-2.5 py-2 text-[11px] font-semibold text-slate-200"
-                  title="Cast another browser tab into this player"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-3 py-2 text-xs font-bold text-white shadow-md transition"
                 >
-                  <MonitorUp className="h-3.5 w-3.5 text-rose-400" />
-                  <span>Cast Tab</span>
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    {localFileName ? `Active: ${localFileName}` : 'Select .MP4 / .MKV File'}
+                  </span>
                 </button>
-                <a
-                  href={`https://www.netflix.com/watch/${watchId}?vybeRoom=${encodeURIComponent(
-                    roomCode
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1 rounded-full bg-[#E50914]/25 border border-[#E50914]/50 px-2.5 py-2 text-[11px] font-bold text-rose-200"
-                  title="Open this episode on Netflix.com"
+              </div>
+
+              {/* Method 2: Direct Video Link (.mp4 / .m3u8) */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex flex-col justify-between space-y-2.5">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                    <Link2 className="h-4 w-4" />
+                    <span>2. Direct Stream Link</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300/80 mt-1">
+                    Paste a direct .mp4, .m3u8, or cloud video link (Dropbox, R2, CDN).
+                  </p>
+                </div>
+                <form
+                  onSubmit={handleSaveDirectStreamUrl}
+                  className="flex items-center gap-1 rounded-full vybe-glass-pill px-2.5 py-1"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  <span>Netflix</span>
-                </a>
+                  <input
+                    type="text"
+                    value={directUrlInput}
+                    onChange={(e) => setDirectUrlInput(e.target.value)}
+                    placeholder="https://.../episode.mp4"
+                    className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-full bg-emerald-500 hover:bg-emerald-400 px-3 py-1 text-[11px] font-bold text-black shrink-0 transition"
+                  >
+                    Play
+                  </button>
+                </form>
+              </div>
+
+              {/* Method 3: Cast Tab / Netflix */}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 flex flex-col justify-between space-y-2.5">
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-400">
+                    <MonitorUp className="h-4 w-4" />
+                    <span>3. Cast Netflix Browser Tab</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300/80 mt-1">
+                    Play the episode in a Netflix tab and stream its video & audio straight into VYBE.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleStartTabCast}
+                    className="flex-1 inline-flex items-center justify-center gap-1 rounded-full bg-rose-600 hover:bg-rose-500 px-3 py-2 text-xs font-bold text-white transition"
+                  >
+                    <MonitorUp className="h-3.5 w-3.5" />
+                    <span>Cast Tab</span>
+                  </button>
+                  <a
+                    href={`https://www.netflix.com/watch/${watchId}?vybeRoom=${encodeURIComponent(
+                      roomCode
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1 rounded-full bg-white/10 hover:bg-white/20 px-3 py-2 text-xs font-semibold text-slate-200 transition"
+                    title="Open Netflix in new tab"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
               </div>
             </div>
 
-            {/* 2. Switch Arcane Episodes (S1:E1 – S1:E9) */}
+            {/* Switch Arcane Episodes (S1:E1 – S1:E9) */}
             {canControlPlayback && (
-              <div>
+              <div className="pt-2 border-t border-white/10">
                 <div className="text-[11px] font-semibold text-slate-400 mb-1.5">
-                  Switch Arcane Season 1 Episode:
+                  Select Arcane Episode:
                 </div>
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
                   {SUPPORTED_NETFLIX_TITLES.map((ep, i) => (
@@ -455,7 +493,6 @@ export function NetflixCompanionDeck({
                       type="button"
                       onClick={() => {
                         onSelectNetflixTitle(ep.watchId, ep.title, ep.posterUrl);
-                        setShowSourceDrawer(false);
                       }}
                       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 border text-[11px] shrink-0 transition ${
                         ep.watchId === watchId
