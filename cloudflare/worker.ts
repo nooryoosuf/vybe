@@ -257,8 +257,8 @@ export default {
         const nowMs = Date.now();
         const roomId = `room-${code.toLowerCase()}-${nowMs.toString(36)}`;
         const platform = body.platform === 'netflix' ? 'netflix' : 'youtube';
-        const videoId = body.videoId || (platform === 'netflix' ? '80057281' : 'aqz-KE-bpKQ');
-        const videoTitle = body.videoTitle || 'Synchronized Screening';
+        const videoId = body.videoId || (platform === 'netflix' ? '81446667' : 'fXmAurh012s');
+        const videoTitle = body.videoTitle || 'Arcane — S1:E1 Welcome to the Playground';
 
         const hostParticipant: RoomParticipant = {
           userId: body.hostId,
@@ -366,14 +366,14 @@ export default {
               playback: {
                 roomId: `room-${code.toLowerCase()}`,
                 platform: isNfx ? 'netflix' : 'youtube',
-                videoId: isNfx ? '80057281' : 'aqz-KE-bpKQ',
+                videoId: isNfx ? '81446667' : 'fXmAurh012s',
                 videoTitle: isNfx
                   ? SUPPORTED_NETFLIX_TITLES[0].title
                   : CURATED_YOUTUBE_VIDEOS[0].title,
                 videoThumbnail: isNfx
                   ? SUPPORTED_NETFLIX_TITLES[0].posterUrl
                   : CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl,
-                netflixWatchId: isNfx ? '80057281' : undefined,
+                netflixWatchId: isNfx ? '81446667' : undefined,
                 isPlaying: false,
                 currentTime: 0,
                 playbackRate: 1,

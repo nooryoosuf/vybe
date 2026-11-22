@@ -150,9 +150,9 @@ export function generateRoomCode(): string {
 // ============================================================================
 // Client-Side Resilient Room & Movie Cache
 // ============================================================================
-const LOCAL_ROOMS_KEY = 'vybe_local_rooms_clean_v2';
-const LOCAL_MESSAGES_KEY = 'vybe_local_messages_clean_v2';
-const LOCAL_MOVIES_KEY = 'vybe_local_site_movies_v2';
+const LOCAL_ROOMS_KEY = 'vybe_local_rooms_clean_v3';
+const LOCAL_MESSAGES_KEY = 'vybe_local_messages_clean_v3';
+const LOCAL_MOVIES_KEY = 'vybe_local_site_movies_arcane_v3';
 
 export function getSeedRoomsClient(): Record<string, WatchRoom> {
   return {};

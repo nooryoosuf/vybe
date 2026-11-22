@@ -23,7 +23,7 @@ export interface VybeDatabaseSchema {
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
 
-const DB_FILE_PATH = path.join(os.tmpdir(), 'vybe-social-cinema-clean-v2.json');
+const DB_FILE_PATH = path.join(os.tmpdir(), 'vybe-social-cinema-arcane-v3.json');
 
 function createCleanDatabase(): VybeDatabaseSchema {
   return {

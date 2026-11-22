@@ -339,10 +339,10 @@ export function WatchRoomClient() {
             waitingRoomEnabled: false,
             participantLimit: 25,
             controlPermission: 'everyone',
-            videoId: isNfx ? '80057281' : 'aqz-KE-bpKQ',
+            videoId: isNfx ? '81446667' : 'fXmAurh012s',
             videoTitle: isNfx
-              ? 'Stranger Things — S1:E1 Chapter One'
-              : 'Big Buck Bunny — 4K 60fps Open Film',
+              ? 'Arcane — S1:E1 Welcome to the Playground'
+              : 'Arcane: League of Legends — Official Trailer',
           });
           autoCreated.code = roomCode;
           saveLocalRoom(autoCreated);
@@ -1117,16 +1117,16 @@ export function WatchRoomClient() {
                 if (room.platform === 'youtube') {
                   handleDirectSwitchMedia(
                     'netflix',
-                    '80057281',
-                    'Stranger Things — S1:E1 Chapter One',
-                    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=900&q=80'
+                    '81446667',
+                    'Arcane — S1:E1 Welcome to the Playground',
+                    'https://i.ytimg.com/vi/3jfI-z__GY0/maxresdefault.jpg'
                   );
                 } else {
                   handleDirectSwitchMedia(
                     'youtube',
-                    'aqz-KE-bpKQ',
-                    'Big Buck Bunny — 4K 60fps Open Film',
-                    'https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg'
+                    'fXmAurh012s',
+                    'Arcane: League of Legends — Official Trailer',
+                    'https://i.ytimg.com/vi/fXmAurh012s/maxresdefault.jpg'
                   );
                 }
               }}
