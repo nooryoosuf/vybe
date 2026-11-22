@@ -6,6 +6,7 @@
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "*://*.netflix.com/*",
+    "https://vybe.nooryoosuf.com/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
     "https://*.pages.dev/*",
@@ -26,6 +27,7 @@
     },
     {
       "matches": [
+        "https://vybe.nooryoosuf.com/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
         "https://*.pages.dev/*",
