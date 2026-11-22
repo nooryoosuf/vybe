@@ -50,6 +50,7 @@ import { VoiceVideoDock } from '@/components/room/VoiceVideoDock';
 import { RoomSettingsModal } from '@/components/room/RoomSettingsModal';
 import { GlowButton } from '@/components/ui/AceternityPrimitives';
 import {
+  buildClientRoomObject,
   formatTimestamp,
   getLocalRoom,
   getLocalRoomMessages,
@@ -62,11 +63,16 @@ import { VYBE_REACTIONS } from '@/lib/constants';
 export function WatchRoomClient() {
   const params = useParams();
   const router = useRouter();
+  const queryCode =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('code')
+      : null;
   const pathCode =
     typeof window !== 'undefined'
       ? window.location.pathname.split('/room/')[1]?.split('/')[0]
       : undefined;
   const rawCode =
+    queryCode ||
     pathCode ||
     (Array.isArray(params?.code) ? params.code[0] : params?.code) ||
     'VYB-4K1';
@@ -245,6 +251,7 @@ export function WatchRoomClient() {
           activeUser = await continueAsGuest();
         }
 
+        const localCachedRoom = getLocalRoom(roomCode);
         let loadedRoom: WatchRoom | null = null;
         let loadedStatus: MemberStatus = 'joined';
         let loadedMessages: ChatMessage[] = [];
@@ -257,6 +264,7 @@ export function WatchRoomClient() {
               action: 'JOIN_ROOM',
               roomCode,
               password: providedPassword,
+              clientRoom: localCachedRoom,
               user: {
                 id: activeUser.id,
                 displayName: activeUser.displayName,
@@ -285,38 +293,61 @@ export function WatchRoomClient() {
           // Fallback to client room cache if server fetch was interrupted
         }
 
-        if (!loadedRoom) {
-          const cached = getLocalRoom(roomCode);
-          if (cached) {
-            const exists = cached.participants.some((p) => p.userId === activeUser.id);
-            if (!exists) {
-              cached.participants.push({
-                userId: activeUser.id,
-                displayName: activeUser.displayName,
-                username: activeUser.username,
-                avatarUrl: activeUser.avatarUrl,
-                role: cached.hostId === activeUser.id ? 'host' : 'member',
-                status: 'joined',
-                isGuest: activeUser.isGuest,
-                isChatMuted: false,
-                isVoiceMuted: true,
-                isCameraOn: false,
-                isSpeaking: false,
-                reportedTime: cached.playback.currentTime,
-                syncDrift: 0,
-                extensionConnected: true,
-                joinedAt: new Date().toISOString(),
-                lastActiveAt: Date.now(),
-              });
-              saveLocalRoom(cached);
-            }
-            loadedRoom = cached;
-            loadedMessages = getLocalRoomMessages(roomCode);
+        if (!loadedRoom && localCachedRoom) {
+          const exists = localCachedRoom.participants.some(
+            (p) => p.userId === activeUser.id
+          );
+          if (!exists) {
+            localCachedRoom.participants.push({
+              userId: activeUser.id,
+              displayName: activeUser.displayName,
+              username: activeUser.username,
+              avatarUrl: activeUser.avatarUrl,
+              role: localCachedRoom.hostId === activeUser.id ? 'host' : 'member',
+              status: 'joined',
+              isGuest: activeUser.isGuest,
+              isChatMuted: false,
+              isVoiceMuted: true,
+              isCameraOn: false,
+              isSpeaking: false,
+              reportedTime: localCachedRoom.playback.currentTime,
+              syncDrift: 0,
+              extensionConnected: true,
+              joinedAt: new Date().toISOString(),
+              lastActiveAt: Date.now(),
+            });
+            saveLocalRoom(localCachedRoom);
           }
+          loadedRoom = localCachedRoom;
+          loadedMessages = getLocalRoomMessages(roomCode);
         }
 
         if (!loadedRoom) {
-          throw new Error('Could not find or join watch room. Double-check the room code.');
+          // Auto-initialize room for this code so shared room links always work
+          const isNfx = roomCode.startsWith('NFX');
+          const autoCreated = buildClientRoomObject({
+            title: `Watch Party ${roomCode}`,
+            description: 'Synchronized watch party room',
+            hostId: activeUser.id,
+            hostName: activeUser.displayName,
+            hostUsername: activeUser.username,
+            hostAvatar: activeUser.avatarUrl,
+            isGuest: activeUser.isGuest,
+            platform: isNfx ? 'netflix' : 'youtube',
+            privacy: 'public',
+            allowGuests: true,
+            waitingRoomEnabled: false,
+            participantLimit: 25,
+            controlPermission: 'everyone',
+            videoId: isNfx ? '80057281' : 'aqz-KE-bpKQ',
+            videoTitle: isNfx
+              ? 'Stranger Things — S1:E1 Chapter One'
+              : 'Big Buck Bunny — 4K 60fps Open Film',
+          });
+          autoCreated.code = roomCode;
+          saveLocalRoom(autoCreated);
+          loadedRoom = autoCreated;
+          loadedMessages = getLocalRoomMessages(roomCode);
         }
 
         setRequiresPassword(false);
@@ -597,26 +628,110 @@ export function WatchRoomClient() {
     [publishRealtimeEvent, roomCode, user]
   );
 
-  // Queue operations
+  // Queue operations (optimistic client update + server sync)
   const executeQueueAction = useCallback(
     async (payload: Record<string, unknown>) => {
-      const res = await fetch('/api/rooms', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'QUEUE_ACTION',
+      setRoom((prev) => {
+        if (!prev) return prev;
+        const nextRoom: WatchRoom = {
+          ...prev,
+          queue: [...prev.queue],
+          playback: { ...prev.playback },
+        };
+        const queueOp = payload.queueOp as string;
+        if (queueOp === 'ADD' && payload.item) {
+          nextRoom.queue.push({
+            ...(payload.item as QueueItem),
+            position: nextRoom.queue.length,
+          });
+        } else if (queueOp === 'VOTE') {
+          const itemId = payload.itemId as string;
+          const direction = payload.direction as 'up' | 'down';
+          const uid = user?.id || 'guest';
+          nextRoom.queue = nextRoom.queue
+            .map((q) => {
+              if (q.id !== itemId) return q;
+              const up = q.upvoterIds.filter((id) => id !== uid);
+              const down = q.downvoterIds.filter((id) => id !== uid);
+              if (direction === 'up') up.push(uid);
+              else down.push(uid);
+              return {
+                ...q,
+                upvoterIds: up,
+                downvoterIds: down,
+                score: up.length - down.length,
+              };
+            })
+            .sort((a, b) => b.score - a.score);
+        } else if (queueOp === 'MOVE') {
+          const idx = nextRoom.queue.findIndex((q) => q.id === payload.itemId);
+          const swapIdx = idx + Number(payload.dir || 0);
+          if (idx >= 0 && swapIdx >= 0 && swapIdx < nextRoom.queue.length) {
+            const tmp = nextRoom.queue[idx];
+            nextRoom.queue[idx] = nextRoom.queue[swapIdx];
+            nextRoom.queue[swapIdx] = tmp;
+          }
+        } else if (queueOp === 'REMOVE') {
+          nextRoom.queue = nextRoom.queue.filter((q) => q.id !== payload.itemId);
+        } else if (queueOp === 'PLAY_ITEM' || queueOp === 'PLAY_NEXT') {
+          const target =
+            queueOp === 'PLAY_ITEM'
+              ? nextRoom.queue.find((q) => q.id === payload.itemId)
+              : nextRoom.queue[0];
+          if (target) {
+            nextRoom.platform = target.platform;
+            nextRoom.playback = {
+              roomId: nextRoom.id,
+              platform: target.platform,
+              videoId: target.videoId,
+              videoTitle: target.title,
+              videoThumbnail: target.thumbnailUrl,
+              netflixWatchId:
+                target.platform === 'netflix' ? target.videoId : undefined,
+              isPlaying: true,
+              currentTime: 0,
+              playbackRate: 1,
+              seq: nextRoom.playback.seq + 1,
+              updatedBy: user?.id || nextRoom.hostId,
+              updatedByName: user?.displayName || nextRoom.hostName,
+              updatedAt: Date.now(),
+            };
+            nextRoom.queue = nextRoom.queue.filter((q) => q.id !== target.id);
+          }
+        }
+        saveLocalRoom(nextRoom);
+        publishRealtimeEvent({
+          type: 'ROOM_UPDATED',
           roomCode,
-          userId: user?.id,
-          userName: user?.displayName,
-          ...payload,
-        }),
+          room: nextRoom,
+        });
+        return nextRoom;
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.room) setRoom(data.room);
+
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'QUEUE_ACTION',
+            roomCode,
+            userId: user?.id,
+            userName: user?.displayName,
+            ...payload,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.room) {
+            setRoom(data.room);
+            saveLocalRoom(data.room);
+          }
+        }
+      } catch {
+        // Optimistic update already applied
       }
     },
-    [roomCode, user?.displayName, user?.id]
+    [publishRealtimeEvent, roomCode, user?.displayName, user?.id]
   );
 
   const handleDirectSwitchMedia = useCallback(
@@ -626,31 +741,76 @@ export function WatchRoomClient() {
       videoTitle: string,
       videoThumbnail: string
     ) => {
-      const res = await fetch('/api/rooms', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'CHANGE_MEDIA',
-          roomCode,
+      setRoom((prev) => {
+        if (!prev) return prev;
+        const nextPlayback: PlaybackState = {
+          roomId: prev.id,
           platform,
           videoId,
           videoTitle,
           videoThumbnail,
-          userId: user?.id,
-          userName: user?.displayName,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.room) setRoom(data.room);
-        addToast({
-          title: `Now Screening: ${videoTitle}`,
-          description: `Synchronized across all viewers in room ${roomCode}.`,
-          variant: 'success',
+          netflixWatchId: platform === 'netflix' ? videoId : undefined,
+          isPlaying: true,
+          currentTime: 0,
+          playbackRate: 1,
+          seq: prev.playback.seq + 1,
+          updatedBy: user?.id || prev.hostId,
+          updatedByName: user?.displayName || prev.hostName,
+          updatedAt: Date.now(),
+        };
+        const nextRoom: WatchRoom = {
+          ...prev,
+          platform,
+          playback: nextPlayback,
+        };
+        saveLocalRoom(nextRoom);
+        publishRealtimeEvent({
+          type: 'PLAYBACK_SYNC',
+          roomCode,
+          playback: nextPlayback,
+          senderId: user?.id || prev.hostId,
         });
+        publishRealtimeEvent({
+          type: 'ROOM_UPDATED',
+          roomCode,
+          room: nextRoom,
+        });
+        return nextRoom;
+      });
+
+      addToast({
+        title: `Now Screening: ${videoTitle}`,
+        description: `Synchronized across all viewers in room ${roomCode}.`,
+        variant: 'success',
+      });
+
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'CHANGE_MEDIA',
+            roomCode,
+            platform,
+            videoId,
+            videoTitle,
+            videoThumbnail,
+            userId: user?.id,
+            userName: user?.displayName,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.room) {
+            setRoom(data.room);
+            saveLocalRoom(data.room);
+          }
+        }
+      } catch {
+        // Optimistic update already applied
       }
     },
-    [addToast, roomCode, user?.displayName, user?.id]
+    [addToast, publishRealtimeEvent, roomCode, user?.displayName, user?.id]
   );
 
   // Participant moderation
@@ -730,7 +890,7 @@ export function WatchRoomClient() {
   }, [roomCode, router, user?.id]);
 
   const handleCopyInvite = () => {
-    const inviteUrl = `${window.location.origin}/room/${roomCode}`;
+    const inviteUrl = `${window.location.origin}/room?code=${encodeURIComponent(roomCode)}`;
     navigator.clipboard?.writeText(inviteUrl).catch(() => {});
     setCopiedInvite(true);
     addToast({
@@ -872,56 +1032,46 @@ export function WatchRoomClient() {
     Math.abs(localDriftSec) > (user?.preferences?.autoSyncThresholdSec || 2.0);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#07080D] text-slate-100">
+    <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#07080D] text-slate-100">
       {/* ==================================================================== */}
-      {/* TOP THEATER HEADER BAR                                               */}
+      {/* TOP THEATER HEADER BAR (SINGLE COMPACT ROW ON MOBILE & DESKTOP)      */}
       {/* ==================================================================== */}
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.1] bg-[#0D0F18]/80 backdrop-blur-2xl px-4 py-2.5 shrink-0 z-30">
+      <header className="flex items-center justify-between gap-2 border-b border-white/[0.1] bg-[#0D0F18]/90 backdrop-blur-2xl px-3 sm:px-4 py-2 shrink-0 z-30">
         {/* Left: Navigation, Room Info & Platform Pill */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Link
             href="/dashboard"
-            className="flex items-center gap-1.5 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition"
-            title="Return to Dashboard"
+            className="flex items-center gap-1.5 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-2.5 sm:px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition shrink-0"
+            title="Return to Lobby"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Lobby</span>
           </Link>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm sm:text-base font-extrabold text-white truncate max-w-[180px] sm:max-w-xs">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <h1 className="text-xs sm:text-base font-extrabold text-white truncate max-w-[130px] sm:max-w-xs">
                 {room.title}
               </h1>
 
               {/* Platform Indicator */}
               <span
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
                   room.platform === 'youtube'
                     ? 'bg-rose-500/20 border-rose-500/40 text-rose-200'
                     : 'bg-[#E50914]/25 border-[#E50914]/50 text-rose-200'
                 }`}
               >
                 {room.platform === 'youtube' ? (
-                  <Youtube className="h-3 w-3" />
+                  <Youtube className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                 ) : (
-                  <Tv className="h-3 w-3" />
+                  <Tv className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                 )}
-                <span>{room.platform}</span>
+                <span className="hidden xs:inline">{room.platform}</span>
               </span>
-
-              {room.isLocked && (
-                <span
-                  className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[10px] font-semibold text-amber-300"
-                  title="Room is locked"
-                >
-                  <Lock className="h-2.5 w-2.5" />
-                  <span className="hidden md:inline">Locked</span>
-                </span>
-              )}
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-400">
               <span>Host: {room.hostName}</span>
               <span>•</span>
               <span className="font-medium text-vybe-accentLight">{room.code}</span>
@@ -929,35 +1079,33 @@ export function WatchRoomClient() {
           </div>
         </div>
 
-        {/* Center/Right: Sync Status, Platform Toggle, Invite Friends & Settings */}
-        <div className="flex items-center gap-2">
+        {/* Right: Sync Status, Platform Toggle, Invite Friends & Settings */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Connection & Drift Indicator */}
           {connectionHealth === 'reconnecting' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/40 px-3.5 py-1.5 text-[11px] font-semibold text-amber-300">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/40 px-2.5 py-1 text-[10px] font-semibold text-amber-300">
               <RefreshCw className="h-3 w-3 animate-spin" />
-              <span>Reconnecting...</span>
+              <span className="hidden sm:inline">Reconnecting</span>
             </span>
           ) : isOutOfSync ? (
             <button
               type="button"
               onClick={handleRequestResync}
-              className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 px-3.5 py-1.5 text-[11px] font-semibold text-amber-200 transition"
-              title="You are slightly out of sync with the host. Click to resync immediately."
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 px-2.5 py-1 text-[10px] font-semibold text-amber-200 transition"
+              title="Click to resync immediately"
             >
               <AlertTriangle className="h-3 w-3 text-amber-400" />
-              <span>
-                Out of Sync ({localDriftSec > 0 ? `+${localDriftSec}s` : `${localDriftSec}s`}) • Resync
-              </span>
+              <span>Resync</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={handleRequestResync}
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3.5 py-1.5 text-[11px] font-medium text-emerald-300 transition"
+              className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 text-[11px] font-medium text-emerald-300 transition"
               title="Synchronized with authoritative room playback"
             >
               <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-              <span>In Sync (±{Math.abs(localDriftSec).toFixed(1)}s)</span>
+              <span>In Sync</span>
             </button>
           )}
 
@@ -982,18 +1130,18 @@ export function WatchRoomClient() {
                   );
                 }
               }}
-              className="hidden md:inline-flex items-center gap-1.5 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition"
-              title="Switch room between YouTube Player and Netflix Companion Mode"
+              className="inline-flex items-center gap-1 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-2.5 sm:px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:text-white transition"
+              title="Switch between YouTube and Netflix"
             >
               {room.platform === 'youtube' ? (
                 <>
                   <Tv className="h-3.5 w-3.5 text-rose-400" />
-                  <span>Switch to Netflix</span>
+                  <span className="hidden sm:inline">Netflix</span>
                 </>
               ) : (
                 <>
                   <Youtube className="h-3.5 w-3.5 text-rose-400" />
-                  <span>Switch to YouTube</span>
+                  <span className="hidden sm:inline">YouTube</span>
                 </>
               )}
             </button>
@@ -1003,17 +1151,17 @@ export function WatchRoomClient() {
           <button
             type="button"
             onClick={handleCopyInvite}
-            className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-b from-[#8374FE] to-[#5645E8] hover:brightness-110 px-4 py-1.5 text-xs font-bold text-white shadow-[0_6px_20px_-4px_rgba(109,93,251,0.6),inset_0_1px_0_0_rgba(255,255,255,0.35)] transition"
+            className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-b from-[#8374FE] to-[#5645E8] hover:brightness-110 px-3 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-bold text-white shadow-[0_6px_20px_-4px_rgba(109,93,251,0.6),inset_0_1px_0_0_rgba(255,255,255,0.35)] transition"
           >
             {copiedInvite ? (
               <>
                 <Check className="h-3.5 w-3.5" />
-                <span>Copied {room.code}</span>
+                <span>Copied</span>
               </>
             ) : (
               <>
                 <Share2 className="h-3.5 w-3.5" />
-                <span>Invite ({room.code})</span>
+                <span>{room.code}</span>
               </>
             )}
           </button>
@@ -1022,10 +1170,10 @@ export function WatchRoomClient() {
           <button
             type="button"
             onClick={() => setProfileModalOpen(true)}
-            className="rounded-full vybe-glass-pill hover:bg-white/[0.12] p-2 text-slate-300 hover:text-white transition"
-            title="Profile & Accessibility Preferences"
+            className="rounded-full vybe-glass-pill hover:bg-white/[0.12] p-1.5 text-slate-300 hover:text-white transition"
+            title="Profile & Preferences"
           >
-            <Sparkles className="h-4 w-4 text-vybe-accentLight" />
+            <Sparkles className="h-3.5 w-3.5 text-vybe-accentLight" />
           </button>
 
           {/* Room Management Settings Trigger */}
@@ -1034,23 +1182,23 @@ export function WatchRoomClient() {
               type="button"
               onClick={() => setIsSettingsOpen(true)}
               aria-label="Room settings"
-              className="rounded-full vybe-glass-pill hover:bg-white/[0.12] p-2 text-slate-300 hover:text-white transition"
-              title="Room Settings & Permissions"
+              className="rounded-full vybe-glass-pill hover:bg-white/[0.12] p-1.5 text-slate-300 hover:text-white transition"
+              title="Room Settings"
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
       </header>
 
       {/* ==================================================================== */}
-      {/* MAIN THEATER WORKSPACE (VIDEO STAGE + SIDEBAR / FLOATING CHAT)       */}
+      {/* MAIN THEATER WORKSPACE (CLEAN MOBILE STACK / DESKTOP SPLIT)          */}
       {/* ==================================================================== */}
-      <div className="relative flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Left/Center Video Player Stage */}
-        <div className="relative flex-1 flex flex-col min-w-0 bg-[#05060A] overflow-hidden">
+      <div className="relative flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+        {/* Top on Mobile (shrink-0) / Left Center Stage on Desktop (lg:flex-1) */}
+        <div className="relative w-full lg:flex-1 flex flex-col shrink-0 lg:shrink min-w-0 lg:min-h-0 bg-[#05060A]">
           <div
-            className="relative flex-1 flex flex-col overflow-hidden"
+            className="relative w-full lg:flex-1 flex flex-col overflow-hidden"
             onMouseEnter={() => setIsVideoHovered(true)}
             onMouseLeave={() => setIsVideoHovered(false)}
           >
@@ -1076,6 +1224,9 @@ export function WatchRoomClient() {
                   }
                 }}
                 onRequestResync={handleRequestResync}
+                onSwitchYouTubeVideo={(vidId, title, thumb) =>
+                  handleDirectSwitchMedia('youtube', vidId, title, thumb)
+                }
               />
             ) : (
               <NetflixCompanionDeck
@@ -1095,7 +1246,7 @@ export function WatchRoomClient() {
               />
             )}
 
-            {/* Animated Floating Reactions Layer & Hover Reaction Bar */}
+            {/* Animated Floating Reactions Layer */}
             <FloatingReactionsLayer
               reactions={floatingReactions}
               onTriggerReaction={handleTriggerReaction}
@@ -1103,15 +1254,15 @@ export function WatchRoomClient() {
                 setFloatingReactions((prev) => prev.filter((r) => r.id !== id))
               }
               reducedMotion={user?.preferences?.reducedMotion}
-              isVideoHovered={isVideoHovered}
+              isVideoHovered={false}
             />
 
-            {/* Translucent Floating Chat Mode Overlay (when enabled) */}
+            {/* Translucent Floating Chat Mode Overlay (Desktop) */}
             {isFloatingChat && (
               <motion.div
                 initial={{ opacity: 0, x: 24 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="absolute top-3 right-3 bottom-20 z-30 w-80 sm:w-96 rounded-2xl bg-[#0D0F18]/85 backdrop-blur-xl border border-white/15 shadow-vybe-lg overflow-hidden flex flex-col"
+                className="absolute top-3 right-3 bottom-16 z-30 w-80 sm:w-96 rounded-2xl bg-[#0D0F18]/85 backdrop-blur-xl border border-white/15 shadow-vybe-lg overflow-hidden flex flex-col"
               >
                 <LiveChatPanel
                   messages={messages}
@@ -1127,74 +1278,69 @@ export function WatchRoomClient() {
             )}
           </div>
 
-          {/* Persistent Reaction Bar + Voice/Video Communication Dock Below Video */}
-          <div className="border-t border-white/[0.1] bg-[#07080D]/90 backdrop-blur-xl px-3.5 py-2.5 flex flex-col gap-2 shrink-0">
-            {/* Always-Accessible Quick Reaction Pill Bar + Keyboard Shortcut Hints */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-                {VYBE_REACTIONS.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => handleTriggerReaction(r)}
-                    title={`${r.label} (Key ${r.shortcut})`}
-                    aria-label={`Launch ${r.label} reaction`}
-                    className="group flex items-center gap-1.5 rounded-full vybe-glass-pill hover:bg-vybe-accent/30 hover:border-vybe-accent px-3 py-1.5 transition-all active:scale-90"
-                  >
-                    <span className="text-base leading-none">{r.emoji}</span>
-                    <span className="hidden xl:inline text-[11px] font-semibold text-slate-200 group-hover:text-white">
-                      {r.label}
-                    </span>
-                    <span className="text-[9px] font-mono text-slate-400">
-                      {r.shortcut}
-                    </span>
-                  </button>
-                ))}
-              </div>
+          {/* Single Slim Reaction + Voice/Camera Strip Under Video */}
+          <div className="border-t border-white/[0.08] bg-[#07080D] px-3 py-1.5 flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+              {VYBE_REACTIONS.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => handleTriggerReaction(r)}
+                  title={`${r.label} (${r.shortcut})`}
+                  aria-label={`Launch ${r.label} reaction`}
+                  className="flex h-7 w-7 sm:h-8 sm:w-auto sm:px-2.5 items-center justify-center gap-1 rounded-full vybe-glass-pill hover:bg-vybe-accent/30 hover:border-vybe-accent transition-all active:scale-90 shrink-0"
+                >
+                  <span className="text-sm sm:text-base leading-none">{r.emoji}</span>
+                  <span className="hidden xl:inline text-[11px] font-medium text-slate-200">
+                    {r.label}
+                  </span>
+                </button>
+              ))}
+            </div>
 
+            <div className="flex items-center gap-1.5 shrink-0">
               {isFloatingChat && (
                 <button
                   type="button"
                   onClick={() => setIsFloatingChat(false)}
-                  className="rounded-full vybe-glass-pill px-3.5 py-1.5 text-xs font-semibold text-vybe-accentLight hover:text-white"
+                  className="rounded-full vybe-glass-pill px-3 py-1 text-[11px] font-semibold text-vybe-accentLight hover:text-white"
                 >
-                  Show Side Panel
+                  Panel
                 </button>
               )}
-            </div>
 
-            {/* Voice & Video Communication Dock */}
-            <VoiceVideoDock
-              roomCode={room.code}
-              currentUserId={user?.id || 'guest'}
-              currentUserName={user?.displayName || 'Viewer'}
-              participants={room.participants}
-              onMediaStateChange={(mediaState) => {
-                if (!user) return;
-                publishRealtimeEvent({
-                  type: 'PARTICIPANT_HEARTBEAT',
-                  roomCode,
-                  participant: {
-                    userId: user.id,
-                    ...mediaState,
-                  },
-                });
-              }}
-            />
+              <VoiceVideoDock
+                roomCode={room.code}
+                currentUserId={user?.id || 'guest'}
+                currentUserName={user?.displayName || 'Viewer'}
+                participants={room.participants}
+                onMediaStateChange={(mediaState) => {
+                  if (!user) return;
+                  publishRealtimeEvent({
+                    type: 'PARTICIPANT_HEARTBEAT',
+                    roomCode,
+                    participant: {
+                      userId: user.id,
+                      ...mediaState,
+                    },
+                  });
+                }}
+              />
+            </div>
           </div>
         </div>
 
         {/* ================================================================== */}
-        {/* RIGHT INTERACTIVE PANEL (CHAT / WATCH QUEUE / PARTICIPANTS)        */}
+        {/* BOTTOM ON MOBILE (flex-1 min-h-0) / RIGHT PANEL ON DESKTOP         */}
         {/* ================================================================== */}
         {!isFloatingChat && (
-          <aside className="w-full lg:w-[380px] xl:w-[410px] h-[44vh] lg:h-full border-t lg:border-t-0 lg:border-l border-white/[0.08] bg-[#0A0C14] flex flex-col shrink-0">
+          <aside className="flex-1 min-h-0 w-full lg:w-[380px] xl:w-[410px] lg:h-full lg:flex-none border-t lg:border-t-0 lg:border-l border-white/[0.08] bg-[#0A0C14] flex flex-col overflow-hidden">
             {/* Sidebar Navigation Tabs */}
-            <div className="grid grid-cols-3 border-b border-white/[0.08] bg-[#0D0F18] p-1.5 gap-1">
+            <div className="grid grid-cols-3 border-b border-white/[0.08] bg-[#0D0F18] p-1 gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('chat')}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+                className={`flex items-center justify-center gap-1.5 rounded-full py-1.5 text-xs font-bold transition ${
                   activeTab === 'chat'
                     ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -1207,7 +1353,7 @@ export function WatchRoomClient() {
               <button
                 type="button"
                 onClick={() => setActiveTab('queue')}
-                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+                className={`flex items-center justify-center gap-1.5 rounded-full py-1.5 text-xs font-bold transition ${
                   activeTab === 'queue'
                     ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -1220,7 +1366,7 @@ export function WatchRoomClient() {
               <button
                 type="button"
                 onClick={() => setActiveTab('participants')}
-                className={`relative flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition ${
+                className={`relative flex items-center justify-center gap-1.5 rounded-full py-1.5 text-xs font-bold transition ${
                   activeTab === 'participants'
                     ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -1237,7 +1383,7 @@ export function WatchRoomClient() {
             </div>
 
             {/* Active Tab Body */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
               {activeTab === 'chat' && (
                 <LiveChatPanel
                   messages={messages}

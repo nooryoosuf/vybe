@@ -592,8 +592,56 @@ export default {
       if (req.method === 'PATCH') {
         const body = (await req.json()) as Record<string, any>;
         const code = String(body.roomCode || '').trim().toUpperCase();
+        if (!db.rooms[code]) {
+          if (body.clientRoom && body.clientRoom.code) {
+            db.rooms[code] = { ...body.clientRoom, code };
+          } else {
+            const nowIso = new Date().toISOString();
+            const nowMs = Date.now();
+            const isNfx = code.startsWith('NFX');
+            db.rooms[code] = {
+              id: `room-${code.toLowerCase()}`,
+              code,
+              title: `Watch Party ${code}`,
+              description: 'Synchronized watch party room',
+              hostId: body.user?.id || 'usr-elena-host',
+              hostName: body.user?.displayName || 'Cinema Host',
+              hostAvatar: body.user?.avatarUrl || AVATAR_PRESETS[0],
+              platform: isNfx ? 'netflix' : 'youtube',
+              privacy: 'public',
+              hasPassword: false,
+              allowGuests: true,
+              waitingRoomEnabled: false,
+              isLocked: false,
+              isActive: true,
+              participantLimit: 25,
+              controlPermission: 'everyone',
+              playback: {
+                roomId: `room-${code.toLowerCase()}`,
+                platform: isNfx ? 'netflix' : 'youtube',
+                videoId: isNfx ? '80057281' : 'aqz-KE-bpKQ',
+                videoTitle: isNfx
+                  ? SUPPORTED_NETFLIX_TITLES[0].title
+                  : CURATED_YOUTUBE_VIDEOS[0].title,
+                videoThumbnail: isNfx
+                  ? SUPPORTED_NETFLIX_TITLES[0].posterUrl
+                  : CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl,
+                netflixWatchId: isNfx ? '80057281' : undefined,
+                isPlaying: false,
+                currentTime: 0,
+                playbackRate: 1,
+                seq: 1,
+                updatedBy: body.user?.id || 'usr-elena-host',
+                updatedByName: body.user?.displayName || 'Cinema Host',
+                updatedAt: nowMs,
+              },
+              participants: [],
+              queue: [],
+              createdAt: nowIso,
+            };
+          }
+        }
         const room = db.rooms[code];
-        if (!room) return jsonResponse({ error: 'Room not found' }, 404);
 
         if (body.action === 'JOIN_ROOM') {
           const user = body.user;
@@ -801,8 +849,16 @@ export default {
     }
 
     // 6. Serve Static Assets & Dynamic /room/[code] Route Fallback
+    if (url.pathname === '/room' || url.pathname === '/room/') {
+      const roomHtml = new URL('/room.html', url.origin);
+      const res = await env.ASSETS.fetch(new Request(roomHtml.toString(), req));
+      if (res.ok) return new Response(res.body, { status: 200, headers: res.headers });
+    }
+
     if (url.pathname.startsWith('/room/')) {
-      const fallbackUrl = new URL('/room/VYB-4K1.html', url.origin);
+      const isTxt = url.pathname.endsWith('.txt');
+      const fallbackPath = isTxt ? '/room/VYB-4K1.txt' : '/room/VYB-4K1.html';
+      const fallbackUrl = new URL(fallbackPath, url.origin);
       const assetRes = await env.ASSETS.fetch(new Request(fallbackUrl.toString(), req));
       if (assetRes.ok) {
         return new Response(assetRes.body, {

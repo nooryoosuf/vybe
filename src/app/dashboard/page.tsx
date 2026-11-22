@@ -121,9 +121,10 @@ export default function DashboardPage() {
       });
       return;
     }
-    const codeMatch = raw.match(/\/room\/([A-Za-z0-9-]+)/);
-    const code = (codeMatch ? codeMatch[1] : raw).toUpperCase();
-    router.push(`/room/${code}`);
+    const queryMatch = raw.match(/[?&]code=([A-Za-z0-9-]+)/);
+    const pathMatch = raw.match(/\/room\/([A-Za-z0-9-]+)/);
+    const code = (queryMatch ? queryMatch[1] : pathMatch ? pathMatch[1] : raw).toUpperCase();
+    router.push(`/room?code=${encodeURIComponent(code)}`);
   };
 
   const handleAddWatchlistItem = async (e: React.FormEvent) => {
@@ -579,7 +580,7 @@ export default function DashboardPage() {
                           </div>
 
                           <Link
-                            href={`/room/${room.code}`}
+                            href={`/room?code=${encodeURIComponent(room.code)}`}
                             className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-b from-[#8374FE] to-[#5645E8] hover:brightness-110 px-4 py-2 text-xs font-bold text-white shadow-[0_6px_20px_-4px_rgba(109,93,251,0.6),inset_0_1px_0_0_rgba(255,255,255,0.35)] transition"
                           >
                             <Play className="h-3.5 w-3.5 fill-current" />

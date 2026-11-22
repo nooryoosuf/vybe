@@ -54,10 +54,10 @@ export default function LandingPage() {
     e.preventDefault();
     const cleaned = joinCode.trim().toUpperCase();
     if (!cleaned) {
-      router.push('/room/VYB-4K1');
+      router.push('/room?code=VYB-4K1');
       return;
     }
-    router.push(`/room/${cleaned}`);
+    router.push(`/room?code=${encodeURIComponent(cleaned)}`);
   };
 
   return (

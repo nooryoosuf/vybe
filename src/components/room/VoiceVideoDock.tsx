@@ -9,7 +9,6 @@ import {
   Settings2,
   Volume2,
   X,
-  Radio,
 } from 'lucide-react';
 import { RoomParticipant } from '@/types/vybe';
 
@@ -35,7 +34,6 @@ export function VoiceVideoDock({
   const [isVoiceMuted, setIsVoiceMuted] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [rtcMode, setRtcMode] = useState<'livekit-sfu' | 'webrtc-mesh'>('webrtc-mesh');
 
   const [showDeviceSelector, setShowDeviceSelector] = useState(false);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
@@ -48,28 +46,16 @@ export function VoiceVideoDock({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initialize LiveKit / WebRTC Session Token
   useEffect(() => {
-    async function initRtcToken() {
-      try {
-        const res = await fetch('/api/livekit/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomCode,
-            userId: currentUserId,
-            displayName: currentUserName,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.mode) setRtcMode(data.mode);
-        }
-      } catch {
-        // Fallback to WebRTC Mesh
-      }
-    }
-    initRtcToken();
+    fetch('/api/livekit/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomCode,
+        userId: currentUserId,
+        displayName: currentUserName,
+      }),
+    }).catch(() => {});
   }, [roomCode, currentUserId, currentUserName]);
 
   const refreshDevices = useCallback(async () => {
@@ -81,7 +67,7 @@ export function VoiceVideoDock({
       setAudioDevices(list.filter((d) => d.kind === 'audioinput'));
       setVideoDevices(list.filter((d) => d.kind === 'videoinput'));
     } catch {
-      // Ignore permission restriction
+      // Ignore
     }
   }, []);
 
@@ -172,7 +158,6 @@ export function VoiceVideoDock({
             }, 350);
           }
         } catch {
-          // If running in headless browser or user denies physical mic/cam, fall back gracefully to simulated audio track indicator
           const simulatedSpeaking = !nextVoiceMuted;
           setIsSpeaking(simulatedSpeaking);
           onMediaStateChange({
@@ -214,145 +199,97 @@ export function VoiceVideoDock({
   const activeParticipants = participants.filter((p) => p.status === 'joined');
 
   return (
-    <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0D0F18] border border-white/10 px-3.5 py-2">
-      {/* Left: Floating Participant Avatars with Speaking & Sync Rings */}
-      <div className="flex items-center gap-2 overflow-x-auto py-0.5">
-        {activeParticipants.map((p) => {
+    <div className="relative flex items-center gap-1.5 shrink-0">
+      {/* Compact Avatar Stack on Desktop */}
+      <div className="hidden md:flex items-center -space-x-1.5 mr-1">
+        {activeParticipants.slice(0, 4).map((p) => {
           const isMe = p.userId === currentUserId;
           const speaking = isMe ? isSpeaking : p.isSpeaking;
-          const voiceOn = isMe ? !isVoiceMuted : !p.isVoiceMuted;
-
           return (
             <div
               key={p.userId}
-              className={`flex items-center gap-2 rounded-full bg-[#131624] border px-2.5 py-1 transition-all ${
-                speaking
-                  ? 'border-emerald-400 ring-2 ring-emerald-400/30'
-                  : 'border-white/10'
+              title={`${p.displayName} (${p.role})`}
+              className={`relative h-6 w-6 rounded-full overflow-hidden ring-2 ${
+                speaking ? 'ring-emerald-400' : 'ring-[#07080D]'
               }`}
             >
-              <div className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.avatarUrl}
-                  alt={p.displayName}
-                  className="h-6 w-6 rounded-full object-cover"
-                />
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-1 ring-[#0D0F18]"
-                  style={{
-                    backgroundColor:
-                      Math.abs(p.syncDrift || 0) <= 2.5 ? '#10B981' : '#F59E0B',
-                  }}
-                />
-              </div>
-
-              <span className="text-[11px] font-semibold text-white max-w-[90px] truncate">
-                {p.displayName.split(' ')[0]}
-              </span>
-
-              {voiceOn ? (
-                <Volume2
-                  className={`h-3 w-3 ${
-                    speaking ? 'text-emerald-400 animate-pulse' : 'text-vybe-accentLight'
-                  }`}
-                />
-              ) : (
-                <MicOff className="h-3 w-3 text-slate-500" />
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={p.avatarUrl}
+                alt={p.displayName}
+                className="h-full w-full object-cover"
+              />
             </div>
           );
         })}
       </div>
 
-      {/* Right: Optional Voice & Camera Controls */}
-      <div className="flex items-center gap-1.5">
-        <span className="hidden xl:inline-flex items-center gap-1 text-[10px] font-mono text-slate-400 mr-1">
-          <Radio className="h-3 w-3 text-emerald-400" />
-          <span>{rtcMode === 'livekit-sfu' ? 'LiveKit SFU' : 'WebRTC Ready'}</span>
-        </span>
+      <button
+        type="button"
+        onClick={handleToggleMic}
+        aria-label={isVoiceMuted ? 'Unmute microphone' : 'Mute microphone'}
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold border transition ${
+          !isVoiceMuted
+            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+            : 'vybe-glass-pill text-slate-300'
+        }`}
+      >
+        {isVoiceMuted ? (
+          <MicOff className="h-3 w-3 text-slate-400" />
+        ) : (
+          <Volume2 className="h-3 w-3 text-emerald-400 animate-pulse" />
+        )}
+        <span className="hidden sm:inline">{isVoiceMuted ? 'Mic' : 'Live'}</span>
+      </button>
 
-        <button
-          type="button"
-          onClick={handleToggleMic}
-          aria-label={isVoiceMuted ? 'Unmute microphone' : 'Mute microphone'}
-          className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition ${
-            !isVoiceMuted
-              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-              : 'bg-[#161A2B] hover:bg-[#1E243B] border-white/10 text-slate-300'
-          }`}
-        >
-          {isVoiceMuted ? (
-            <>
-              <MicOff className="h-3.5 w-3.5 text-slate-400" />
-              <span>Voice Off</span>
-            </>
-          ) : (
-            <>
-              <Mic className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Voice Live</span>
-            </>
-          )}
-        </button>
+      <button
+        type="button"
+        onClick={handleToggleCamera}
+        aria-label={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold border transition ${
+          isCameraOn
+            ? 'bg-vybe-accent/25 border-vybe-accent text-white'
+            : 'vybe-glass-pill text-slate-300'
+        }`}
+      >
+        {isCameraOn ? (
+          <Video className="h-3 w-3 text-vybe-accentLight" />
+        ) : (
+          <VideoOff className="h-3 w-3 text-slate-400" />
+        )}
+        <span className="hidden sm:inline">Cam</span>
+      </button>
 
-        <button
-          type="button"
-          onClick={handleToggleCamera}
-          aria-label={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
-          className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition ${
-            isCameraOn
-              ? 'bg-vybe-accent/25 border-vybe-accent text-white'
-              : 'bg-[#161A2B] hover:bg-[#1E243B] border-white/10 text-slate-300'
-          }`}
-        >
-          {isCameraOn ? (
-            <>
-              <Video className="h-3.5 w-3.5 text-vybe-accentLight" />
-              <span>Cam On</span>
-            </>
-          ) : (
-            <>
-              <VideoOff className="h-3.5 w-3.5 text-slate-400" />
-              <span>Cam Off</span>
-            </>
-          )}
-        </button>
+      <button
+        type="button"
+        onClick={() => setShowDeviceSelector((v) => !v)}
+        className="rounded-full vybe-glass-pill p-1.5 text-slate-300 hover:text-white transition"
+        title="Audio & Video Devices"
+        aria-label="Audio and Video Device Selection"
+      >
+        <Settings2 className="h-3 w-3" />
+      </button>
 
-        <button
-          type="button"
-          onClick={() => setShowDeviceSelector((v) => !v)}
-          className="rounded-xl bg-[#161A2B] hover:bg-[#1E243B] border border-white/10 p-1.5 text-slate-300 hover:text-white transition"
-          title="Audio & Video Device Selection"
-          aria-label="Audio and Video Device Selection"
-        >
-          <Settings2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Local Camera PIP Tile when Camera is On */}
       {isCameraOn && (
-        <div className="fixed bottom-20 left-5 z-40 w-44 overflow-hidden rounded-xl bg-[#0D0F18] border border-vybe-accent shadow-vybe-lg">
+        <div className="fixed bottom-16 left-4 z-40 w-36 overflow-hidden rounded-2xl bg-[#0D0F18] border border-vybe-accent shadow-vybe-lg">
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="h-28 w-full object-cover bg-[#131624]"
+            className="h-24 w-full object-cover bg-[#131624]"
           />
-          <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold text-white bg-[#07080D]/90">
-            <span>{currentUserName} (You)</span>
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex items-center justify-between px-2 py-1 text-[10px] font-semibold text-white bg-[#07080D]/90">
+            <span className="truncate">{currentUserName}</span>
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           </div>
         </div>
       )}
 
-      {/* Device Selection Popover */}
       {showDeviceSelector && (
-        <div className="absolute right-2 bottom-12 z-40 w-72 rounded-2xl bg-[#131624] border border-white/15 p-4 shadow-vybe-lg space-y-3">
+        <div className="absolute right-0 bottom-10 z-50 w-64 rounded-2xl bg-[#131624] border border-white/15 p-3.5 shadow-vybe-lg space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-white">
-              Media Device Selection
-            </span>
+            <span className="text-xs font-bold text-white">Media Devices</span>
             <button
               type="button"
               onClick={() => setShowDeviceSelector(false)}
@@ -363,15 +300,15 @@ export function VoiceVideoDock({
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Microphone Input
+            <label className="block text-[10px] font-medium text-slate-400 mb-1">
+              Microphone
             </label>
             <select
               value={selectedAudioId}
               onChange={(e) => setSelectedAudioId(e.target.value)}
-              className="w-full rounded-lg bg-[#07080D] border border-white/10 px-2.5 py-1.5 text-xs text-white"
+              className="w-full rounded-lg bg-[#07080D] border border-white/10 px-2 py-1 text-xs text-white"
             >
-              <option value="default">Default System Microphone</option>
+              <option value="default">Default Microphone</option>
               {audioDevices.map((d, i) => (
                 <option key={d.deviceId || i} value={d.deviceId}>
                   {d.label || `Microphone #${i + 1}`}
@@ -381,15 +318,15 @@ export function VoiceVideoDock({
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Camera Input
+            <label className="block text-[10px] font-medium text-slate-400 mb-1">
+              Camera
             </label>
             <select
               value={selectedVideoId}
               onChange={(e) => setSelectedVideoId(e.target.value)}
-              className="w-full rounded-lg bg-[#07080D] border border-white/10 px-2.5 py-1.5 text-xs text-white"
+              className="w-full rounded-lg bg-[#07080D] border border-white/10 px-2 py-1 text-xs text-white"
             >
-              <option value="default">Default HD Camera</option>
+              <option value="default">Default Camera</option>
               {videoDevices.map((d, i) => (
                 <option key={d.deviceId || i} value={d.deviceId}>
                   {d.label || `Camera #${i + 1}`}

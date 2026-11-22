@@ -350,47 +350,47 @@ export function NetflixCompanionDeck({
     NETFLIX_PREVIEW_STREAMS[watchId] || NETFLIX_PREVIEW_STREAMS['80057281'];
 
   return (
-    <div className="relative flex flex-col justify-between w-full h-full bg-[#07080D] overflow-y-auto">
+    <div className="relative flex flex-col justify-between w-full max-h-[46dvh] lg:max-h-none lg:h-full bg-[#07080D] overflow-hidden shrink-0 lg:shrink">
       {/* Top Mode Switcher Bar: 3 Ways to Watch Netflix Together */}
-      <div className="relative z-20 flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#0D0F18]/90 backdrop-blur-xl px-4 py-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="relative z-20 flex items-center justify-between gap-2 border-b border-white/10 bg-[#0D0F18]/90 backdrop-blur-xl px-3 py-1.5 overflow-x-auto shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setViewingMode('tab_cast')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold border transition ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
               viewingMode === 'tab_cast'
                 ? 'bg-[#E50914]/25 border-[#E50914] text-white shadow-[0_0_20px_rgba(229,9,20,0.35)]'
                 : 'vybe-glass-pill text-slate-300 hover:text-white'
             }`}
           >
-            <MonitorUp className="h-3.5 w-3.5 text-rose-400" />
-            <span>1. In-App Netflix Tab Stream</span>
+            <MonitorUp className="h-3 w-3 text-rose-400" />
+            <span>1. Stream Tab</span>
           </button>
 
           <button
             type="button"
             onClick={() => setViewingMode('preview_player')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold border transition ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
               viewingMode === 'preview_player'
                 ? 'bg-vybe-accent/25 border-vybe-accent text-white shadow-vybe-accent'
                 : 'vybe-glass-pill text-slate-300 hover:text-white'
             }`}
           >
-            <Film className="h-3.5 w-3.5 text-vybe-accentLight" />
-            <span>2. Built-In Preview Player</span>
+            <Film className="h-3 w-3 text-vybe-accentLight" />
+            <span>2. Preview Player</span>
           </button>
 
           <button
             type="button"
             onClick={() => setViewingMode('extension_popup')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold border transition ${
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
               viewingMode === 'extension_popup'
                 ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200'
                 : 'vybe-glass-pill text-slate-300 hover:text-white'
             }`}
           >
-            <Chrome className="h-3.5 w-3.5 text-emerald-400" />
-            <span>3. Teleparty Extension Sync</span>
+            <Chrome className="h-3 w-3 text-emerald-400" />
+            <span>3. Extension</span>
           </button>
         </div>
 
@@ -398,19 +398,19 @@ export function NetflixCompanionDeck({
         {canControlPlayback && (
           <form
             onSubmit={handleLoadCustomNetflixUrl}
-            className="flex items-center gap-1.5 rounded-full vybe-glass-pill px-2.5 py-1"
+            className="hidden sm:flex items-center gap-1.5 rounded-full vybe-glass-pill px-2.5 py-0.5 shrink-0"
           >
-            <Search className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <Search className="h-3 w-3 text-slate-400 shrink-0" />
             <input
               type="text"
               value={customNetflixInput}
               onChange={(e) => setCustomNetflixInput(e.target.value)}
               placeholder="Paste netflix.com/watch/... link"
-              className="w-40 sm:w-52 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
+              className="w-40 bg-transparent text-[11px] text-white placeholder-slate-400 focus:outline-none"
             />
             <button
               type="submit"
-              className="rounded-full bg-[#E50914] hover:bg-[#f6121d] px-2.5 py-0.5 text-[11px] font-bold text-white transition"
+              className="rounded-full bg-[#E50914] hover:bg-[#f6121d] px-2 py-0.5 text-[10px] font-bold text-white transition"
             >
               Load
             </button>
@@ -422,7 +422,7 @@ export function NetflixCompanionDeck({
       {/* MODE 1: IN-APP NETFLIX TAB STREAM (NO EXTENSION REQUIRED)            */}
       {/* ==================================================================== */}
       {viewingMode === 'tab_cast' && (
-        <div className="relative flex-1 flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden">
+        <div className="relative flex-1 min-h-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto">
           {/* Background Poster Blur */}
           {!isCastingTab && (
             <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-25">
@@ -662,60 +662,49 @@ export function NetflixCompanionDeck({
         </div>
       )}
 
-      {/* Bottom Synchronized Master Timeline & Transport Bar */}
-      <div className="border-t border-white/[0.08] bg-[#0D0F18] px-4 py-2.5 flex flex-col gap-2">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-mono text-slate-300 w-12 text-right">
-            {formatTimestamp(localTime)}
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(duration, 100)}
-            step={1}
-            value={Math.min(localTime, Math.max(duration, 100))}
-            disabled={!canControlPlayback}
-            onChange={(e) => handleSeek(Number(e.target.value))}
-            aria-label="Netflix master sync timeline"
-            className="flex-1 h-1.5 rounded-lg accent-[#E50914] cursor-pointer"
-          />
-          <span className="text-[11px] font-mono text-slate-400 w-12">
-            {formatTimestamp(duration)}
-          </span>
-        </div>
+      {/* Compact Bottom Synchronized Master Timeline & Transport Bar */}
+      <div className="border-t border-white/[0.08] bg-[#0D0F18] px-3 py-2 flex items-center gap-2.5 shrink-0">
+        <button
+          type="button"
+          onClick={handleTogglePlay}
+          disabled={!canControlPlayback}
+          className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-[#E50914] hover:bg-[#f6121d] disabled:opacity-50 text-white transition shrink-0"
+        >
+          {localPlaying ? (
+            <Pause className="h-3.5 w-3.5 fill-current" />
+          ) : (
+            <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+          )}
+        </button>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleTogglePlay}
-              disabled={!canControlPlayback}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E50914] hover:bg-[#f6121d] disabled:opacity-50 text-white transition"
-            >
-              {localPlaying ? (
-                <Pause className="h-4 w-4 fill-current" />
-              ) : (
-                <Play className="h-4 w-4 fill-current ml-0.5" />
-              )}
-            </button>
-            <span className="text-xs font-medium text-slate-300">
-              {isCastingTab
-                ? 'Live Netflix Tab Stream Active'
-                : localPlaying
-                ? 'Room Playback: Playing'
-                : 'Room Playback: Paused'}
-            </span>
-          </div>
+        <span className="text-[10px] sm:text-[11px] font-mono text-slate-300 shrink-0">
+          {formatTimestamp(localTime)}
+        </span>
 
-          <button
-            type="button"
-            onClick={onRequestResync}
-            className="inline-flex items-center gap-1.5 rounded-full vybe-glass-pill px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition"
-          >
-            <RefreshCw className="h-3.5 w-3.5 text-rose-400" />
-            <span>Resync Room</span>
-          </button>
-        </div>
+        <input
+          type="range"
+          min={0}
+          max={Math.max(duration, 100)}
+          step={1}
+          value={Math.min(localTime, Math.max(duration, 100))}
+          disabled={!canControlPlayback}
+          onChange={(e) => handleSeek(Number(e.target.value))}
+          aria-label="Netflix master sync timeline"
+          className="flex-1 min-w-0 h-1.5 rounded-lg accent-[#E50914] cursor-pointer"
+        />
+
+        <span className="text-[10px] sm:text-[11px] font-mono text-slate-400 shrink-0">
+          {formatTimestamp(duration)}
+        </span>
+
+        <button
+          type="button"
+          onClick={onRequestResync}
+          className="inline-flex items-center gap-1 rounded-full vybe-glass-pill px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:text-white transition shrink-0"
+        >
+          <RefreshCw className="h-3 w-3 text-rose-400" />
+          <span className="hidden sm:inline">Resync</span>
+        </button>
       </div>
     </div>
   );

@@ -13,7 +13,6 @@ import {
   Shield,
   Sparkles,
   ArrowRight,
-  Link2,
 } from 'lucide-react';
 import { useVybe } from '@/context/VybeContext';
 import { CURATED_YOUTUBE_VIDEOS, SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
@@ -27,7 +26,6 @@ import {
 } from '@/lib/utils';
 import { ControlPermission, PlatformType, RoomPrivacy, WatchRoom } from '@/types/vybe';
 import { GlowButton } from '@/components/ui/AceternityPrimitives';
-import { AsciiCinemaBadge } from '@/components/ui/AsciiBackdrop';
 
 export function CreateRoomModal({
   isOpen,
@@ -45,17 +43,12 @@ export function CreateRoomModal({
   const router = useRouter();
   const { user, continueAsGuest, addToast } = useVybe();
 
-  const [title, setTitle] = useState('Midnight 4K Screening Room');
+  const [title, setTitle] = useState('Midnight Watch Party');
   const [description, setDescription] = useState(
     'Grab snacks, jump on voice or chat, and react in real time.'
   );
   const [platform, setPlatform] = useState<PlatformType>(initialPlatform);
-  const [mediaInput, setMediaInput] = useState(
-    initialVideoId || CURATED_YOUTUBE_VIDEOS[0].videoId
-  );
-  const [selectedTitle, setSelectedTitle] = useState(
-    initialVideoTitle || CURATED_YOUTUBE_VIDEOS[0].title
-  );
+  const [optionalUrl, setOptionalUrl] = useState(initialVideoId || '');
   const [privacy, setPrivacy] = useState<RoomPrivacy>('public');
   const [password, setPassword] = useState('');
   const [allowGuests, setAllowGuests] = useState(true);
@@ -68,18 +61,6 @@ export function CreateRoomModal({
 
   if (!isOpen) return null;
 
-  const handlePlatformSwitch = (nextPlatform: PlatformType) => {
-    setPlatform(nextPlatform);
-    setErrorMsg(null);
-    if (nextPlatform === 'youtube') {
-      setMediaInput(CURATED_YOUTUBE_VIDEOS[0].videoId);
-      setSelectedTitle(CURATED_YOUTUBE_VIDEOS[0].title);
-    } else {
-      setMediaInput(SUPPORTED_NETFLIX_TITLES[0].watchId);
-      setSelectedTitle(SUPPORTED_NETFLIX_TITLES[0].title);
-    }
-  };
-
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -91,36 +72,42 @@ export function CreateRoomModal({
         activeUser = await continueAsGuest('Cinema Host');
       }
 
-      let resolvedVideoId = '';
-      let resolvedTitle = selectedTitle;
-      let resolvedThumbnail = '';
+      let resolvedVideoId =
+        platform === 'youtube'
+          ? CURATED_YOUTUBE_VIDEOS[0].videoId
+          : SUPPORTED_NETFLIX_TITLES[0].watchId;
+      let resolvedTitle =
+        initialVideoTitle ||
+        (platform === 'youtube'
+          ? CURATED_YOUTUBE_VIDEOS[0].title
+          : SUPPORTED_NETFLIX_TITLES[0].title);
+      let resolvedThumbnail =
+        platform === 'youtube'
+          ? CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl
+          : SUPPORTED_NETFLIX_TITLES[0].posterUrl;
 
-      if (platform === 'youtube') {
-        const ytId = extractYouTubeId(mediaInput);
-        if (!ytId) {
-          throw new Error(
-            'Please paste a valid YouTube URL (e.g. https://www.youtube.com/watch?v=aqz-KE-bpKQ) or select a preset film.'
-          );
+      if (optionalUrl.trim()) {
+        if (platform === 'youtube') {
+          const ytId = extractYouTubeId(optionalUrl);
+          if (ytId) {
+            resolvedVideoId = ytId;
+            const meta = await fetchYouTubeMetadata(ytId);
+            resolvedTitle = meta.title;
+            resolvedThumbnail = meta.thumbnailUrl;
+          }
+        } else {
+          const nfId = extractNetflixWatchId(optionalUrl);
+          if (nfId) {
+            resolvedVideoId = nfId;
+            const nfMeta = resolveNetflixMetadata(nfId);
+            resolvedTitle = nfMeta.title;
+            resolvedThumbnail = nfMeta.posterUrl;
+          }
         }
-        resolvedVideoId = ytId;
-        const meta = await fetchYouTubeMetadata(ytId);
-        resolvedTitle = meta.title;
-        resolvedThumbnail = meta.thumbnailUrl;
-      } else {
-        const nfId = extractNetflixWatchId(mediaInput);
-        if (!nfId) {
-          throw new Error(
-            'Please select a supported Netflix title or enter a valid Netflix Watch ID (e.g. 80057281).'
-          );
-        }
-        resolvedVideoId = nfId;
-        const nfMeta = resolveNetflixMetadata(nfId);
-        resolvedTitle = nfMeta.title;
-        resolvedThumbnail = nfMeta.posterUrl;
       }
 
       const payload = {
-        title: title.trim() || 'Midnight Screening Room',
+        title: title.trim() || 'Midnight Watch Party',
         description: description.trim(),
         hostId: activeUser.id,
         hostName: activeUser.displayName,
@@ -140,13 +127,17 @@ export function CreateRoomModal({
         videoThumbnail: resolvedThumbnail,
       };
 
-      let createdRoom: WatchRoom | null = null;
+      // Always build local room object first so it is immediately available
+      let createdRoom: WatchRoom = buildClientRoomObject(payload);
 
       try {
         const res = await fetch('/api/rooms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            code: createdRoom.code,
+          }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -156,11 +147,7 @@ export function CreateRoomModal({
           }
         }
       } catch {
-        // Resilient local fallback if server is restarting
-      }
-
-      if (!createdRoom) {
-        createdRoom = buildClientRoomObject(payload);
+        // Local room is already saved and ready
       }
 
       addToast({
@@ -170,7 +157,7 @@ export function CreateRoomModal({
       });
 
       onClose();
-      router.push(`/room/${createdRoom.code}`);
+      router.push(`/room?code=${encodeURIComponent(createdRoom.code)}`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed to create room');
     } finally {
@@ -193,7 +180,7 @@ export function CreateRoomModal({
           initial={{ opacity: 0, scale: 0.94, y: 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 16 }}
-          className="relative z-10 w-full max-w-2xl rounded-3xl vybe-glass p-6 sm:p-7 max-h-[92vh] overflow-y-auto"
+          className="relative z-10 w-full max-w-xl rounded-3xl vybe-glass p-6 sm:p-7 max-h-[92vh] overflow-y-auto"
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div>
@@ -201,7 +188,7 @@ export function CreateRoomModal({
                 Start a Watch Party
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Choose a platform, pick a video, and invite friends
+                Pick your platform and room settings — load or switch videos anytime inside the room
               </p>
             </div>
             <button
@@ -222,13 +209,13 @@ export function CreateRoomModal({
             {/* Platform Selection Pills */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-2">
-                1. Choose Platform
+                Streaming Platform
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => handlePlatformSwitch('youtube')}
-                  className={`flex items-center gap-3.5 rounded-full px-5 py-3 border text-left transition-all ${
+                  onClick={() => setPlatform('youtube')}
+                  className={`flex items-center gap-3.5 rounded-2xl sm:rounded-full px-5 py-3 border text-left transition-all ${
                     platform === 'youtube'
                       ? 'bg-gradient-to-r from-[#6D5DFB]/30 to-[#7C3AED]/20 border-vybe-accent shadow-[0_0_28px_-6px_rgba(109,93,251,0.5)]'
                       : 'bg-white/[0.03] border-white/10 hover:border-white/25'
@@ -238,17 +225,17 @@ export function CreateRoomModal({
                     <Youtube className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-white">YouTube 4K Sync</div>
+                    <div className="text-sm font-bold text-white">YouTube</div>
                     <div className="text-[11px] text-slate-400">
-                      Official IFrame Player API
+                      Paste links & watch in-browser
                     </div>
                   </div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => handlePlatformSwitch('netflix')}
-                  className={`flex items-center gap-3.5 rounded-full px-5 py-3 border text-left transition-all ${
+                  onClick={() => setPlatform('netflix')}
+                  className={`flex items-center gap-3.5 rounded-2xl sm:rounded-full px-5 py-3 border text-left transition-all ${
                     platform === 'netflix'
                       ? 'bg-gradient-to-r from-[#E50914]/30 to-rose-900/20 border-rose-500/70 shadow-[0_0_28px_-6px_rgba(229,9,20,0.45)]'
                       : 'bg-white/[0.03] border-white/10 hover:border-white/25'
@@ -258,103 +245,20 @@ export function CreateRoomModal({
                     <Tv className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-white">Netflix Companion</div>
+                    <div className="text-sm font-bold text-white">Netflix</div>
                     <div className="text-[11px] text-slate-400">
-                      MV3 Chrome Extension Bridge
+                      Log in & stream tab or extension
                     </div>
                   </div>
                 </button>
               </div>
             </div>
 
-            {/* Media Selection */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                {platform === 'youtube'
-                  ? '2. Paste YouTube URL or Choose a Film'
-                  : '2. Choose Netflix Title or Watch ID'}
-              </label>
-
-              <div className="relative">
-                <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  required
-                  value={mediaInput}
-                  onChange={(e) => setMediaInput(e.target.value)}
-                  placeholder={
-                    platform === 'youtube'
-                      ? 'https://www.youtube.com/watch?v=aqz-KE-bpKQ'
-                      : 'Netflix Watch ID (e.g. 80057281 for Stranger Things)'
-                  }
-                  className="w-full rounded-full bg-white/[0.04] backdrop-blur-xl border border-white/15 pl-11 pr-5 py-3 text-sm text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
-                />
-              </div>
-
-              {platform === 'youtube' ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {CURATED_YOUTUBE_VIDEOS.map((vid) => (
-                    <button
-                      key={vid.videoId}
-                      type="button"
-                      onClick={() => {
-                        setMediaInput(vid.videoId);
-                        setSelectedTitle(vid.title);
-                      }}
-                      className={`inline-flex items-center gap-2 rounded-full pl-1.5 pr-3.5 py-1 border text-xs transition-all ${
-                        extractYouTubeId(mediaInput) === vid.videoId
-                          ? 'bg-vybe-accent/25 border-vybe-accent text-white font-semibold shadow-vybe-accent'
-                          : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={vid.thumbnailUrl}
-                        alt={vid.title}
-                        className="h-6 w-6 rounded-full object-cover shrink-0"
-                      />
-                      <span className="truncate max-w-[160px]">
-                        {vid.title.split('—')[0].trim()}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 space-y-2.5">
-                  <div className="flex flex-wrap gap-2">
-                    {SUPPORTED_NETFLIX_TITLES.map((nf) => (
-                      <button
-                        key={nf.watchId}
-                        type="button"
-                        onClick={() => {
-                          setMediaInput(nf.watchId);
-                          setSelectedTitle(nf.title);
-                        }}
-                        className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 border text-xs transition-all ${
-                          extractNetflixWatchId(mediaInput) === nf.watchId
-                            ? 'bg-rose-500/25 border-rose-500/70 text-white font-semibold'
-                            : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        <span>{nf.title.split('—')[0].trim()}</span>
-                        <span className="font-mono text-[10px] opacity-70">
-                          #{nf.watchId}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/25 rounded-2xl px-3.5 py-2">
-                    Netflix titles are never embedded in an iframe. Each viewer watches through their own authenticated Netflix account synchronized by the VYBE Manifest V3 Chrome Extension.
-                  </p>
-                </div>
-              )}
-            </div>
-
             {/* Room Identity */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Room Title
+                  Room Name
                 </label>
                 <input
                   type="text"
@@ -366,7 +270,7 @@ export function CreateRoomModal({
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Atmosphere / Note
+                  Room Description
                 </label>
                 <input
                   type="text"
@@ -381,7 +285,7 @@ export function CreateRoomModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Room Visibility
+                  Visibility
                 </label>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
@@ -495,7 +399,7 @@ export function CreateRoomModal({
               </GlowButton>
               <GlowButton type="submit" disabled={creating}>
                 <Sparkles className="h-4 w-4" />
-                <span>{creating ? 'Spinning Up Room...' : 'Launch Watch Party'}</span>
+                <span>{creating ? 'Creating Room...' : 'Launch Watch Party'}</span>
                 <ArrowRight className="h-4 w-4" />
               </GlowButton>
             </div>

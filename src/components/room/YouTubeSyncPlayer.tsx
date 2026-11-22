@@ -1,8 +1,23 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Volume2, VolumeX, Play, Pause, RefreshCw } from 'lucide-react';
-import { formatTimestamp } from '@/lib/utils';
+import {
+  Loader2,
+  Volume2,
+  VolumeX,
+  Play,
+  Pause,
+  RefreshCw,
+  Link2,
+  Film,
+  X,
+} from 'lucide-react';
+import {
+  extractYouTubeId,
+  fetchYouTubeMetadata,
+  formatTimestamp,
+} from '@/lib/utils';
+import { CURATED_YOUTUBE_VIDEOS } from '@/lib/constants';
 
 declare global {
   interface Window {
@@ -62,6 +77,7 @@ interface YouTubeSyncPlayerProps {
   onLocalTimeReport: (currentTime: number, drift: number) => void;
   onVideoEnded: () => void;
   onRequestResync: () => void;
+  onSwitchYouTubeVideo?: (videoId: string, title: string, thumbnailUrl: string) => void;
   onVideoTitleDetected?: (title: string) => void;
 }
 
@@ -78,6 +94,7 @@ export function YouTubeSyncPlayer({
   onLocalTimeReport,
   onVideoEnded,
   onRequestResync,
+  onSwitchYouTubeVideo,
   onVideoTitleDetected,
 }: YouTubeSyncPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +113,12 @@ export function YouTubeSyncPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
 
+  // Clean collapsible Change Video Drawer
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [switchingVideo, setSwitchingVideo] = useState(false);
+
   const lockRemoteGuard = (ms = 850) => {
     isApplyingRemoteRef.current = true;
     if (remoteLockTimeoutRef.current) {
@@ -106,23 +129,29 @@ export function YouTubeSyncPlayer({
     }, ms);
   };
 
-  // Load Official YouTube IFrame API script
   useEffect(() => {
     let isMounted = true;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
 
     const initPlayer = () => {
       if (!isMounted || !containerRef.current || !window.YT?.Player) return;
       if (playerRef.current) return;
 
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+
       const mountTarget = document.createElement('div');
       containerRef.current.innerHTML = '';
       containerRef.current.appendChild(mountTarget);
+      loadedVideoIdRef.current = videoId;
 
       playerRef.current = new window.YT.Player(mountTarget, {
         videoId,
         playerVars: {
           autoplay: authoritativeIsPlaying ? 1 : 0,
-          controls: 0,
+          controls: 1,
           rel: 0,
           modestbranding: 1,
           playsinline: 1,
@@ -143,17 +172,16 @@ export function YouTubeSyncPlayer({
               onVideoTitleDetected(detectedTitle);
             }
 
-            // Apply initial authoritative state
             lockRemoteGuard(1000);
             const elapsed = authoritativeIsPlaying
               ? Math.max(0, (Date.now() - authoritativeUpdatedAt) / 1000)
               : 0;
             const targetTime = authoritativeTime + elapsed;
-            event.target.seekTo(targetTime, true);
+            if (targetTime > 1) {
+              event.target.seekTo(targetTime, true);
+            }
             if (authoritativeIsPlaying) {
               event.target.playVideo();
-            } else {
-              event.target.pauseVideo();
             }
           },
           onStateChange: (event) => {
@@ -168,14 +196,12 @@ export function YouTubeSyncPlayer({
             }
 
             if (state === 3) {
-              // BUFFERING
               setIsBuffering(true);
               return;
             }
             setIsBuffering(false);
 
             if (state === 0) {
-              // ENDED
               setLocalIsPlaying(false);
               onVideoEnded();
               return;
@@ -199,7 +225,7 @@ export function YouTubeSyncPlayer({
           onError: () => {
             if (!isMounted) return;
             setPlayerError(
-              'This YouTube video restricts embedded playback or could not be loaded. Try switching to another YouTube URL or 4K Open Film.'
+              'This YouTube video restricts embedded playback. Tap "Change Video" below to paste another link or pick a film.'
             );
           },
         },
@@ -222,10 +248,16 @@ export function YouTubeSyncPlayer({
         if (prevCallback) prevCallback();
         initPlayer();
       };
+      pollTimer = setInterval(() => {
+        if (window.YT && window.YT.Player) {
+          initPlayer();
+        }
+      }, 120);
     }
 
     return () => {
       isMounted = false;
+      if (pollTimer) clearInterval(pollTimer);
       if (remoteLockTimeoutRef.current) {
         clearTimeout(remoteLockTimeoutRef.current);
       }
@@ -241,7 +273,6 @@ export function YouTubeSyncPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle videoId changes without leaving the room
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
     if (loadedVideoIdRef.current !== videoId) {
@@ -249,19 +280,15 @@ export function YouTubeSyncPlayer({
       setPlayerError(null);
       lockRemoteGuard(1100);
       try {
-        if (authoritativeIsPlaying) {
-          playerRef.current.loadVideoById(videoId, Math.floor(authoritativeTime || 0));
-        } else {
-          playerRef.current.cueVideoById(videoId, Math.floor(authoritativeTime || 0));
-        }
+        playerRef.current.loadVideoById(videoId, Math.floor(authoritativeTime || 0));
         setLocalCurrentTime(authoritativeTime || 0);
+        setLocalIsPlaying(true);
       } catch {
-        // Fallback if player not ready
+        // Ignore
       }
     }
-  }, [videoId, isReady, authoritativeIsPlaying, authoritativeTime]);
+  }, [videoId, isReady, authoritativeTime]);
 
-  // Apply authoritative remote playback updates (play, pause, seek, drift correction)
   useEffect(() => {
     const player = playerRef.current;
     if (!isReady || !player) return;
@@ -298,7 +325,7 @@ export function YouTubeSyncPlayer({
           setLocalIsPlaying(false);
         }
       } catch {
-        // Ignore transient YT API error
+        // Ignore
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,7 +338,6 @@ export function YouTubeSyncPlayer({
     autoSyncThresholdSec,
   ]);
 
-  // Periodic time & drift ticker (every 500ms)
   useEffect(() => {
     const timer = setInterval(() => {
       const player = playerRef.current;
@@ -326,7 +352,7 @@ export function YouTubeSyncPlayer({
             setLocalIsPlaying(pState === 1);
           }
         } catch {
-          // Fallback to simulated clock if YT iframe blocked in headless env
+          // Ignore
         }
       } else if (authoritativeIsPlaying) {
         const elapsed = Math.max(0, (Date.now() - authoritativeUpdatedAt) / 1000);
@@ -351,6 +377,27 @@ export function YouTubeSyncPlayer({
     authoritativeUpdatedAt,
     onLocalTimeReport,
   ]);
+
+  const handleLoadYouTubeInput = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUrlError(null);
+    const ytId = extractYouTubeId(urlInput);
+    if (!ytId) {
+      setUrlError('Paste a valid YouTube link or 11-character video ID.');
+      return;
+    }
+    setSwitchingVideo(true);
+    try {
+      const meta = await fetchYouTubeMetadata(ytId);
+      if (onSwitchYouTubeVideo) {
+        onSwitchYouTubeVideo(ytId, meta.title, meta.thumbnailUrl);
+      }
+      setUrlInput('');
+      setShowMediaPicker(false);
+    } finally {
+      setSwitchingVideo(false);
+    }
+  };
 
   const handleTogglePlay = () => {
     if (!canControlPlayback) {
@@ -427,9 +474,9 @@ export function YouTubeSyncPlayer({
   };
 
   return (
-    <div className="relative flex flex-col w-full h-full bg-[#05060A] select-none">
-      {/* Main 16:9 / Flexible Video Stage */}
-      <div className="relative flex-1 w-full min-h-[260px] sm:min-h-[380px] overflow-hidden bg-black">
+    <div className="relative flex flex-col w-full lg:h-full bg-[#05060A] select-none shrink-0 lg:shrink">
+      {/* Clean 16:9 Video Screen on Mobile, Full Stage on Desktop */}
+      <div className="relative w-full aspect-video lg:aspect-auto lg:flex-1 overflow-hidden bg-black shrink-0">
         <div
           ref={containerRef}
           className="absolute inset-0 w-full h-full [&>iframe]:w-full [&>iframe]:h-full"
@@ -437,39 +484,133 @@ export function YouTubeSyncPlayer({
 
         {/* Loading / Buffering Overlay */}
         {(!isReady || isBuffering) && !playerError && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[2px] z-10">
-            <Loader2 className="h-9 w-9 text-vybe-accentLight animate-spin" />
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px] z-10">
+            <Loader2 className="h-7 w-7 text-vybe-accentLight animate-spin" />
             <span className="mt-2 text-xs font-medium text-slate-300">
-              {isBuffering ? 'Synchronizing buffer...' : 'Loading YouTube 4K IFrame Player...'}
+              {isBuffering ? 'Synchronizing buffer...' : 'Loading YouTube Player...'}
             </span>
           </div>
         )}
 
         {/* Error Overlay */}
         {playerError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#07080D]/95 p-6 text-center z-20">
-            <p className="max-w-md text-xs sm:text-sm text-rose-300 leading-relaxed">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#07080D]/95 p-4 text-center z-20 space-y-2.5">
+            <p className="max-w-md text-xs text-rose-300 leading-relaxed">
               {playerError}
             </p>
+            {canControlPlayback && (
+              <button
+                type="button"
+                onClick={() => setShowMediaPicker(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-vybe-accent px-4 py-1.5 text-xs font-bold text-white"
+              >
+                <Film className="h-3.5 w-3.5" />
+                <span>Choose Another Video</span>
+              </button>
+            )}
           </div>
         )}
 
-        {/* Top-left subtle title watermark */}
-        <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-center gap-2 rounded-xl bg-[#07080D]/80 backdrop-blur-md border border-white/10 px-3 py-1.5">
-          <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-          <span className="text-xs font-semibold text-white truncate max-w-[240px] sm:max-w-md">
-            {videoTitle}
-          </span>
-        </div>
+        {/* Slide-Over Media Picker Drawer (Only open when user taps "Change Video") */}
+        {showMediaPicker && canControlPlayback && (
+          <div className="absolute inset-x-0 top-0 z-30 bg-[#0D0F18]/95 backdrop-blur-2xl border-b border-white/15 p-3 sm:p-4 space-y-2.5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-white">
+                Load YouTube Video or Choose Film
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMediaPicker(false)}
+                className="rounded-full p-1 text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={handleLoadYouTubeInput}
+              className="flex items-center gap-2 rounded-full vybe-glass-pill px-3 py-1"
+            >
+              <Link2 className="h-3.5 w-3.5 text-vybe-accentLight shrink-0" />
+              <input
+                type="text"
+                value={urlInput}
+                onChange={(e) => {
+                  setUrlInput(e.target.value);
+                  if (urlError) setUrlError(null);
+                }}
+                placeholder="Paste YouTube URL (https://youtube.com/watch?v=...)"
+                className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none py-1"
+              />
+              <button
+                type="submit"
+                disabled={switchingVideo || !urlInput.trim()}
+                className="rounded-full bg-vybe-accent hover:bg-vybe-accentLight disabled:opacity-40 px-3.5 py-1 text-[11px] font-bold text-white transition shrink-0"
+              >
+                {switchingVideo ? 'Loading...' : 'Play'}
+              </button>
+            </form>
+
+            {urlError && (
+              <div className="text-[11px] text-rose-300 px-2">{urlError}</div>
+            )}
+
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              {CURATED_YOUTUBE_VIDEOS.map((vid) => (
+                <button
+                  key={vid.videoId}
+                  type="button"
+                  onClick={() => {
+                    if (onSwitchYouTubeVideo) {
+                      onSwitchYouTubeVideo(
+                        vid.videoId,
+                        vid.title,
+                        vid.thumbnailUrl
+                      );
+                    }
+                    setShowMediaPicker(false);
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-3 py-1 border text-[11px] shrink-0 transition ${
+                    vid.videoId === videoId
+                      ? 'bg-vybe-accent/25 border-vybe-accent text-white font-bold'
+                      : 'vybe-glass-pill text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={vid.thumbnailUrl}
+                    alt={vid.title}
+                    className="h-4 w-4 rounded-full object-cover"
+                  />
+                  <span>{vid.title.split('—')[0].trim()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Bottom Synchronized Transport Bar */}
-      <div className="border-t border-white/[0.08] bg-[#0D0F18] px-4 py-2.5 flex flex-col gap-2">
-        {/* Interactive Seek Scrubber */}
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-mono text-slate-300 w-11 text-right">
+      {/* Compact Bottom Synchronized Transport Bar */}
+      <div className="border-t border-white/[0.08] bg-[#0D0F18] px-3 py-2 flex flex-col gap-1.5 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            disabled={!canControlPlayback}
+            aria-label={localIsPlaying ? 'Pause' : 'Play'}
+            className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-vybe-accent hover:bg-vybe-accentLight disabled:opacity-50 text-white transition shrink-0"
+          >
+            {localIsPlaying ? (
+              <Pause className="h-3.5 w-3.5 fill-current" />
+            ) : (
+              <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <span className="text-[10px] sm:text-[11px] font-mono text-slate-300 shrink-0">
             {formatTimestamp(localCurrentTime)}
           </span>
+
           <input
             type="range"
             min={0}
@@ -479,75 +620,59 @@ export function YouTubeSyncPlayer({
             disabled={!canControlPlayback}
             onChange={(e) => handleSeek(Number(e.target.value))}
             aria-label="Playback seek slider"
-            className={`flex-1 h-1.5 rounded-lg accent-vybe-accent ${
+            className={`flex-1 min-w-0 h-1.5 rounded-lg accent-vybe-accent ${
               canControlPlayback ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
             }`}
           />
-          <span className="text-[11px] font-mono text-slate-400 w-11">
+
+          <span className="text-[10px] sm:text-[11px] font-mono text-slate-400 shrink-0">
             {formatTimestamp(duration)}
           </span>
-        </div>
 
-        {/* Controls Row */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
+          <div className="hidden sm:flex items-center gap-1">
             <button
               type="button"
-              onClick={handleTogglePlay}
-              disabled={!canControlPlayback}
-              aria-label={localIsPlaying ? 'Pause' : 'Play'}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-vybe-accent hover:bg-vybe-accentLight disabled:opacity-50 text-white transition"
+              onClick={handleToggleMute}
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+              className="rounded-full p-1 text-slate-300 hover:bg-white/5 hover:text-white transition"
             >
-              {localIsPlaying ? (
-                <Pause className="h-4 w-4 fill-current" />
+              {isMuted || volume === 0 ? (
+                <VolumeX className="h-3.5 w-3.5 text-rose-400" />
               ) : (
-                <Play className="h-4 w-4 fill-current ml-0.5" />
+                <Volume2 className="h-3.5 w-3.5" />
               )}
             </button>
-
-            {/* Volume */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handleToggleMute}
-                aria-label={isMuted ? 'Unmute' : 'Mute'}
-                className="rounded-lg p-1.5 text-slate-300 hover:bg-white/5 hover:text-white transition"
-              >
-                {isMuted || volume === 0 ? (
-                  <VolumeX className="h-4 w-4 text-rose-400" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={isMuted ? 0 : volume}
-                onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                aria-label="Volume"
-                className="w-20 h-1 accent-vybe-accent hidden sm:block"
-              />
-            </div>
-
-            {!canControlPlayback && (
-              <span className="text-[11px] text-slate-400 bg-white/5 rounded-lg px-2.5 py-1">
-                Host controls playback
-              </span>
-            )}
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={isMuted ? 0 : volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              aria-label="Volume"
+              className="w-16 h-1 accent-vybe-accent"
+            />
           </div>
 
-          <div className="flex items-center gap-2">
+          {canControlPlayback && (
             <button
               type="button"
-              onClick={onRequestResync}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[#161A2B] hover:bg-[#1E243B] border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 transition"
-              title="Synchronize your player timestamp to the room's authoritative playback clock"
+              onClick={() => setShowMediaPicker((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-full vybe-glass-pill hover:bg-white/[0.1] px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition shrink-0"
             >
-              <RefreshCw className="h-3.5 w-3.5 text-vybe-accentLight" />
-              <span>Resync Player</span>
+              <Film className="h-3 w-3 text-vybe-accentLight" />
+              <span className="hidden xs:inline">Change Video</span>
             </button>
-          </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onRequestResync}
+            className="inline-flex items-center gap-1 rounded-full vybe-glass-pill px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:text-white transition shrink-0"
+            title="Resync Player"
+          >
+            <RefreshCw className="h-3 w-3 text-vybe-accentLight" />
+            <span className="hidden sm:inline">Resync</span>
+          </button>
         </div>
       </div>
     </div>
