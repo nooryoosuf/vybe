@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "VYBE — Netflix Social Watch Party Sync",
+  "version": "1.0.0",
+  "description": "Synchronizes Netflix playback timestamps, play/pause/seek commands, and floating reactions with your VYBE Watch Party room.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "*://*.netflix.com/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://*.pages.dev/*",
+    "https://*.workers.dev/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "VYBE Watch Party Sync"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.netflix.com/*"],
+      "js": ["content-netflix.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://*.pages.dev/*",
+        "https://*.workers.dev/*"
+      ],
+      "js": ["content-vybe-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

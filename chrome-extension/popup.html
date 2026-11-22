@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VYBE Netflix Companion</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      background: #07080D;
+      color: #F8FAFC;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .brand {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #FFFFFF;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.18);
+      color: #34D399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .card {
+      margin-top: 14px;
+      background: #0D0F18;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      color: #94A3B8;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    input {
+      width: 100%;
+      background: #07080D;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: #FFFFFF;
+      font-size: 12px;
+      font-family: monospace;
+      margin-bottom: 10px;
+    }
+    button {
+      width: 100%;
+      background: linear-gradient(90deg, #6D5DFB, #7C3AED);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    .meta {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #94A3B8;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="brand">VYBE • Netflix Sync</span>
+    <span id="statusBadge" class="badge">MV3 Ready</span>
+  </div>
+
+  <div class="card">
+    <label for="roomCode">Watch Party Room Code</label>
+    <input id="roomCode" type="text" value="NFX-808" placeholder="NFX-808" />
+
+    <label for="baseUrl">VYBE Platform URL</label>
+    <input id="baseUrl" type="text" value="http://localhost:3000" />
+
+    <button id="connectBtn">Lock Sync to Room</button>
+    <div id="telemetry" class="meta">
+      Each viewer streams through their own authenticated Netflix account.
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
