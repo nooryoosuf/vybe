@@ -34,6 +34,19 @@ export interface SiteMovieItem {
   addedBy?: string;
 }
 
+export interface MovieRequestItem {
+  id: string;
+  title: string;
+  platform: PlatformType;
+  note: string;
+  requestedById: string;
+  requestedByName: string;
+  requestedByUsername: string;
+  upvoterIds: string[];
+  status: 'pending' | 'added';
+  createdAt: string;
+}
+
 export interface UserPreferences {
   reducedMotion: boolean;
   reactionSounds: boolean;

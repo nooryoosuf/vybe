@@ -23,6 +23,9 @@ import {
   UserPlus,
   UserMinus,
   AtSign,
+  ThumbsUp,
+  MessageSquarePlus,
+  Trash2,
 } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import {
@@ -34,6 +37,7 @@ import { AsciiWaveCanvas } from '@/components/ui/AsciiBackdrop';
 import { CreateRoomModal } from '@/components/modals/CreateRoomModal';
 import { useVybe } from '@/context/VybeContext';
 import {
+  MovieRequestItem,
   PlatformType,
   RoomInvitation,
   SiteMovieItem,
@@ -45,9 +49,11 @@ import {
   extractNetflixWatchId,
   extractYouTubeId,
   fetchYouTubeMetadata,
+  getLocalMovieRequests,
   getLocalRoomsMap,
   getLocalSiteMovies,
   resolveNetflixMetadata,
+  saveLocalMovieRequests,
   saveLocalRoom,
   saveLocalSiteMovie,
 } from '@/lib/utils';
@@ -67,6 +73,7 @@ export default function DashboardPage() {
   const [rooms, setRooms] = useState<WatchRoom[]>([]);
   const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
   const [siteMovies, setSiteMovies] = useState<SiteMovieItem[]>([]);
+  const [movieRequests, setMovieRequests] = useState<MovieRequestItem[]>([]);
   const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -89,11 +96,19 @@ export default function DashboardPage() {
     useState<PlatformType>('youtube');
   const [newMovieUrl, setNewMovieUrl] = useState('');
   const [addingMovie, setAddingMovie] = useState(false);
+  const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
   const [launchingMovieId, setLaunchingMovieId] = useState<string | null>(null);
+
+  // Request a Movie Form
+  const [reqTitle, setReqTitle] = useState('');
+  const [reqPlatform, setReqPlatform] = useState<PlatformType>('netflix');
+  const [reqNote, setReqNote] = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
 
   const fetchDashboardState = useCallback(async () => {
     const localMap = getLocalRoomsMap();
     const localMovies = getLocalSiteMovies();
+    const localRequests = getLocalMovieRequests();
     try {
       const uid = user?.id || 'default';
       const res = await fetch(`/api/state?userId=${encodeURIComponent(uid)}`);
@@ -114,6 +129,13 @@ export default function DashboardPage() {
           movieMap.set(m.id, m);
         }
         setSiteMovies(Array.from(movieMap.values()));
+
+        const serverReqs: MovieRequestItem[] = data.movieRequests || [];
+        const reqMap = new Map<string, MovieRequestItem>();
+        for (const r of [...localRequests, ...serverReqs]) {
+          reqMap.set(r.id, r);
+        }
+        setMovieRequests(Array.from(reqMap.values()));
         return;
       }
     } catch {
@@ -123,6 +145,7 @@ export default function DashboardPage() {
     }
     setRooms(Object.values(localMap).filter((r) => r.isActive));
     setSiteMovies(localMovies);
+    setMovieRequests(localRequests);
   }, [user?.id]);
 
   useEffect(() => {
@@ -283,6 +306,12 @@ export default function DashboardPage() {
       setNewMovieTitle('');
       setNewMovieUrl('');
       setShowAddMovieForm(false);
+
+      if (fulfillingRequestId) {
+        handleUpdateRequestStatus(fulfillingRequestId, 'added');
+        setFulfillingRequestId(null);
+      }
+
       addToast({
         title: `"${newMovie.title}" added to Movies!`,
         description: 'Anyone can now launch a watch party with it.',
@@ -291,6 +320,107 @@ export default function DashboardPage() {
     } finally {
       setAddingMovie(false);
     }
+  };
+
+  // Submit a Movie Request
+  const handleCreateMovieRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reqTitle.trim()) return;
+    setSubmittingRequest(true);
+    try {
+      let activeUser = user;
+      if (!activeUser) {
+        activeUser = await continueAsGuest('Friend');
+      }
+      const newReq: MovieRequestItem = {
+        id: `req-${Date.now()}`,
+        title: reqTitle.trim(),
+        platform: reqPlatform,
+        note: reqNote.trim(),
+        requestedById: activeUser.id,
+        requestedByName: activeUser.displayName,
+        requestedByUsername: activeUser.username,
+        upvoterIds: [activeUser.id],
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      const updated = [newReq, ...movieRequests];
+      setMovieRequests(updated);
+      saveLocalMovieRequests(updated);
+
+      await fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_MOVIE_REQUEST',
+          requestItem: newReq,
+        }),
+      }).catch(() => {});
+
+      setReqTitle('');
+      setReqNote('');
+      addToast({
+        title: 'Movie Requested!',
+        description: `"${newReq.title}" is now on the request board.`,
+        variant: 'success',
+      });
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
+
+  const handleVoteMovieRequest = async (requestId: string) => {
+    const uid = user?.id || 'guest';
+    const updated = movieRequests
+      .map((r) => {
+        if (r.id !== requestId) return r;
+        const exists = r.upvoterIds.includes(uid);
+        return {
+          ...r,
+          upvoterIds: exists
+            ? r.upvoterIds.filter((id) => id !== uid)
+            : [...r.upvoterIds, uid],
+        };
+      })
+      .sort((a, b) => b.upvoterIds.length - a.upvoterIds.length);
+
+    setMovieRequests(updated);
+    saveLocalMovieRequests(updated);
+
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'VOTE_MOVIE_REQUEST',
+        requestId,
+        userId: uid,
+      }),
+    }).catch(() => {});
+  };
+
+  const handleUpdateRequestStatus = async (
+    requestId: string,
+    status: 'added' | 'delete'
+  ) => {
+    const updated =
+      status === 'delete'
+        ? movieRequests.filter((r) => r.id !== requestId)
+        : movieRequests.map((r) =>
+            r.id === requestId ? { ...r, status: 'added' as const } : r
+          );
+
+    setMovieRequests(updated);
+    saveLocalMovieRequests(updated);
+
+    await fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'UPDATE_MOVIE_REQUEST_STATUS',
+        requestId,
+        status,
+      }),
+    }).catch(() => {});
   };
 
   const handleAddFriendSubmit = async (e: React.FormEvent) => {
@@ -733,7 +863,7 @@ export default function DashboardPage() {
                   No Active Watch Parties Right Now
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                  Click <strong>&ldquo;Watch with Friends&rdquo;</strong> on any movie above to spin up a room and share the room code with your friends!
+                  Click <strong>&ldquo;Watch with Friends&rdquo;</strong> on any episode above to spin up a room and share the room code with your friends!
                 </p>
               </div>
             ) : (
@@ -829,6 +959,157 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
+
+            {/* ============================================================== */}
+            {/* MOVIE & SERIES REQUEST BOARD (REQUEST NOW, ADD LATER)          */}
+            {/* ============================================================== */}
+            <div className="rounded-3xl vybe-glass p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <MessageSquarePlus className="h-4 w-4 text-vybe-accentLight shrink-0" />
+                    <span>Movie & Series Requests ({movieRequests.length})</span>
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Friends can request movies or shows here so you can add them to the library later
+                  </p>
+                </div>
+              </div>
+
+              {/* Request Form */}
+              <form
+                onSubmit={handleCreateMovieRequest}
+                className="grid grid-cols-1 sm:grid-cols-12 gap-2.5"
+              >
+                <input
+                  type="text"
+                  required
+                  value={reqTitle}
+                  onChange={(e) => setReqTitle(e.target.value)}
+                  placeholder="Movie or show title (e.g. Arcane Season 2, Interstellar)"
+                  className="sm:col-span-5 rounded-full bg-white/[0.04] border border-white/15 px-4 py-2 text-xs text-white placeholder-slate-400 focus:border-vybe-accent focus:outline-none min-w-0"
+                />
+
+                <select
+                  value={reqPlatform}
+                  onChange={(e) => setReqPlatform(e.target.value as PlatformType)}
+                  className="sm:col-span-2 rounded-full bg-[#0D0F18] border border-white/15 px-3 py-2 text-xs text-white focus:border-vybe-accent focus:outline-none"
+                >
+                  <option value="netflix">Netflix</option>
+                  <option value="youtube">YouTube</option>
+                </select>
+
+                <input
+                  type="text"
+                  value={reqNote}
+                  onChange={(e) => setReqNote(e.target.value)}
+                  placeholder="Note or link (optional)"
+                  className="sm:col-span-3 rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:border-vybe-accent focus:outline-none min-w-0"
+                />
+
+                <GlowButton
+                  type="submit"
+                  disabled={submittingRequest || !reqTitle.trim()}
+                  className="sm:col-span-2 py-2 px-3 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                  <span>Request</span>
+                </GlowButton>
+              </form>
+
+              {/* Requests List */}
+              {movieRequests.length === 0 ? (
+                <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 text-center text-xs text-slate-400">
+                  No movie requests yet. Submit a title above to start the wishlist!
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {movieRequests.map((req) => {
+                    const hasVoted = req.upvoterIds.includes(user?.id || 'guest');
+                    return (
+                      <div
+                        key={req.id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-white/[0.03] border border-white/10 p-3.5"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                req.platform === 'youtube'
+                                  ? 'bg-rose-500/20 text-rose-300'
+                                  : 'bg-[#E50914]/25 text-rose-200'
+                              }`}
+                            >
+                              {req.platform}
+                            </span>
+
+                            <span className="text-xs sm:text-sm font-bold text-white truncate">
+                              {req.title}
+                            </span>
+
+                            {req.status === 'added' && (
+                              <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                                Added to Library ✓
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-[11px] text-slate-400">
+                            Requested by{' '}
+                            <span className="text-slate-200 font-medium">
+                              {req.requestedByName} (@{req.requestedByUsername})
+                            </span>
+                            {req.note ? ` • "${req.note}"` : ''}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleVoteMovieRequest(req.id)}
+                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold border transition ${
+                              hasVoted
+                                ? 'bg-vybe-accent/25 border-vybe-accent text-white'
+                                : 'vybe-glass-pill text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <ThumbsUp className="h-3 w-3" />
+                            <span>{req.upvoterIds.length}</span>
+                          </button>
+
+                          {req.status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewMovieTitle(req.title);
+                                setNewMoviePlatform(req.platform);
+                                setFulfillingRequestId(req.id);
+                                setShowAddMovieForm(true);
+                                window.scrollTo({ top: 180, behavior: 'smooth' });
+                              }}
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-300 transition"
+                              title="Pre-fill Add Movie form to add this requested title now"
+                            >
+                              <Plus className="h-3 w-3" />
+                              <span>Add to Site</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateRequestStatus(req.id, 'delete')}
+                            className="rounded-full p-1.5 text-slate-400 hover:text-rose-400 transition"
+                            title="Remove request"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Friends & Invitations Column (5 cols) */}

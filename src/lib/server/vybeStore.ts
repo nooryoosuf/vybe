@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import {
   ChatMessage,
+  MovieRequestItem,
   RealtimeRoomEvent,
   RoomInvitation,
   SavedWatchlist,
@@ -19,6 +20,7 @@ export interface VybeDatabaseSchema {
   watchlistsByUser: Record<string, SavedWatchlist[]>;
   invitations: RoomInvitation[];
   siteMovies: SiteMovieItem[];
+  movieRequests: MovieRequestItem[];
 }
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
@@ -33,6 +35,7 @@ function createCleanDatabase(): VybeDatabaseSchema {
     watchlistsByUser: {},
     invitations: [],
     siteMovies: [...INITIAL_SITE_MOVIES],
+    movieRequests: [],
   };
 }
 

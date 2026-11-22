@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CURATED_YOUTUBE_VIDEOS, INITIAL_SITE_MOVIES, SUPPORTED_NETFLIX_TITLES } from './constants';
-import { ChatMessage, ControlPermission, PlatformType, RoomPrivacy, SiteMovieItem, WatchRoom } from '@/types/vybe';
+import { ChatMessage, ControlPermission, MovieRequestItem, PlatformType, RoomPrivacy, SiteMovieItem, WatchRoom } from '@/types/vybe';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -153,6 +153,30 @@ export function generateRoomCode(): string {
 const LOCAL_ROOMS_KEY = 'vybe_local_rooms_clean_v3';
 const LOCAL_MESSAGES_KEY = 'vybe_local_messages_clean_v3';
 const LOCAL_MOVIES_KEY = 'vybe_local_site_movies_arcane_v3';
+const LOCAL_REQUESTS_KEY = 'vybe_local_movie_requests_v1';
+
+export function getLocalMovieRequests(): MovieRequestItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LOCAL_REQUESTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as MovieRequestItem[];
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // Ignore
+  }
+  return [];
+}
+
+export function saveLocalMovieRequests(list: MovieRequestItem[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_REQUESTS_KEY, JSON.stringify(list));
+  } catch {
+    // Ignore
+  }
+}
 
 export function getSeedRoomsClient(): Record<string, WatchRoom> {
   return {};

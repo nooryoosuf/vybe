@@ -1,5 +1,6 @@
 import {
   ChatMessage,
+  MovieRequestItem,
   QueueItem,
   RealtimeRoomEvent,
   RoomInvitation,
@@ -30,6 +31,7 @@ interface EdgeDb {
   watchlistsByUser: Record<string, SavedWatchlist[]>;
   invitations: RoomInvitation[];
   siteMovies: SiteMovieItem[];
+  movieRequests: MovieRequestItem[];
 }
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
@@ -44,6 +46,7 @@ function createInitialDb(): EdgeDb {
     watchlistsByUser: {},
     invitations: [],
     siteMovies: [...INITIAL_SITE_MOVIES],
+    movieRequests: [],
   };
 }
 
@@ -143,6 +146,7 @@ export default {
           watchlists,
           invitations,
           siteMovies: db.siteMovies?.length ? db.siteMovies : INITIAL_SITE_MOVIES,
+          movieRequests: db.movieRequests || [],
         });
       }
       if (req.method === 'POST') {
@@ -215,6 +219,31 @@ export default {
         if (body.action === 'ADD_SITE_MOVIE' && body.movie) {
           db.siteMovies.unshift(body.movie);
           return jsonResponse({ siteMovies: db.siteMovies });
+        }
+        if (body.action === 'CREATE_MOVIE_REQUEST' && body.requestItem) {
+          db.movieRequests.unshift(body.requestItem);
+          return jsonResponse({ movieRequests: db.movieRequests });
+        }
+        if (body.action === 'VOTE_MOVIE_REQUEST') {
+          const item = db.movieRequests.find((r) => r.id === body.requestId);
+          if (item) {
+            if (item.upvoterIds.includes(body.userId)) {
+              item.upvoterIds = item.upvoterIds.filter((id) => id !== body.userId);
+            } else {
+              item.upvoterIds.push(body.userId);
+            }
+            db.movieRequests.sort((a, b) => b.upvoterIds.length - a.upvoterIds.length);
+          }
+          return jsonResponse({ movieRequests: db.movieRequests });
+        }
+        if (body.action === 'UPDATE_MOVIE_REQUEST_STATUS') {
+          if (body.status === 'delete') {
+            db.movieRequests = db.movieRequests.filter((r) => r.id !== body.requestId);
+          } else {
+            const item = db.movieRequests.find((r) => r.id === body.requestId);
+            if (item) item.status = 'added';
+          }
+          return jsonResponse({ movieRequests: db.movieRequests });
         }
         if (body.action === 'SAVE_WATCHLIST') {
           db.watchlistsByUser[body.userId || 'default'] = [body.watchlist];
