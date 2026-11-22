@@ -95,6 +95,7 @@ export default function DashboardPage() {
   const [newMoviePlatform, setNewMoviePlatform] =
     useState<PlatformType>('youtube');
   const [newMovieUrl, setNewMovieUrl] = useState('');
+  const [newMovieDirectStreamUrl, setNewMovieDirectStreamUrl] = useState('');
   const [addingMovie, setAddingMovie] = useState(false);
   const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
   const [launchingMovieId, setLaunchingMovieId] = useState<string | null>(null);
@@ -286,10 +287,22 @@ export default function DashboardPage() {
         year: 'Added by ' + (user?.displayName || 'Friend'),
         platform: newMoviePlatform,
         videoId,
+        directVideoUrl: newMovieDirectStreamUrl.trim() || undefined,
         thumbnailUrl,
         description: `Added to VYBE by ${user?.displayName || 'a friend'} — click Watch with Friends to launch a room!`,
         addedBy: user?.displayName || 'Friend',
       };
+
+      if (newMovieDirectStreamUrl.trim() && typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(
+            `vybe_custom_stream_${videoId}`,
+            newMovieDirectStreamUrl.trim()
+          );
+        } catch {
+          // ignore
+        }
+      }
 
       const updatedLocal = saveLocalSiteMovie(newMovie);
       setSiteMovies(updatedLocal);
@@ -305,6 +318,7 @@ export default function DashboardPage() {
 
       setNewMovieTitle('');
       setNewMovieUrl('');
+      setNewMovieDirectStreamUrl('');
       setShowAddMovieForm(false);
 
       if (fulfillingRequestId) {
@@ -690,7 +704,7 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-xs text-slate-300 mb-1">
                     Platform
@@ -703,7 +717,7 @@ export default function DashboardPage() {
                     className="w-full rounded-full bg-[#0D0F18] border border-white/15 px-3.5 py-2.5 text-xs text-white focus:border-vybe-accent focus:outline-none"
                   >
                     <option value="youtube">YouTube Movie / Video</option>
-                    <option value="netflix">Netflix Title</option>
+                    <option value="netflix">Netflix / Custom File</option>
                   </select>
                 </div>
 
@@ -747,8 +761,21 @@ export default function DashboardPage() {
                     placeholder={
                       newMoviePlatform === 'youtube'
                         ? 'https://youtube.com/watch?v=...'
-                        : 'https://netflix.com/watch/80057281'
+                        : 'https://netflix.com/watch/81435684'
                     }
+                    className="w-full rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">
+                    Direct .MP4 / .M3U8 Link (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newMovieDirectStreamUrl}
+                    onChange={(e) => setNewMovieDirectStreamUrl(e.target.value)}
+                    placeholder="https://.../video.mp4"
                     className="w-full rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
                   />
                 </div>

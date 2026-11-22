@@ -29,6 +29,7 @@ export interface SiteMovieItem {
   year: string;
   platform: PlatformType;
   videoId: string;
+  directVideoUrl?: string;
   thumbnailUrl: string;
   description: string;
   addedBy?: string;

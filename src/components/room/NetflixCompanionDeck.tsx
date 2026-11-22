@@ -3,43 +3,40 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Tv,
-  Chrome,
-  ExternalLink,
-  CheckCircle2,
-  AlertTriangle,
   Play,
   Pause,
   RefreshCw,
   MonitorUp,
   MonitorOff,
   Film,
-  Search,
-  LogIn,
-  Sparkles,
+  FolderOpen,
+  Link2,
+  ExternalLink,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
 import {
-  extractNetflixWatchId,
   formatTimestamp,
   resolveNetflixMetadata,
 } from '@/lib/utils';
-import { GlowButton } from '@/components/ui/AceternityPrimitives';
 
-export type ExtensionBridgeState =
-  | 'connected_watching'
-  | 'connected_idle'
-  | 'unsupported_page'
-  | 'disconnected';
+type PlayerSourceMode = 'direct_player' | 'youtube_embed' | 'tab_cast';
 
-type NetflixViewingMode = 'tab_cast' | 'extension_popup' | 'preview_player';
-
-const NETFLIX_PREVIEW_STREAMS: Record<string, string> = {
-  '80057281': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-  '80100172': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-  '81040344': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  '80200575': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-  '81231974': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+// Pre-loaded playable video streams for each Arcane Episode out of the box
+const ARCANE_YOUTUBE_STREAMS: Record<string, string> = {
+  '81446667': '3jfI-z__GY0', // Ep 1: Welcome to the Playground
+  '81446668': 'fXmAurh012s', // Ep 2: Official Arcane Cinema Cut
+  '81446669': 'F5tOuijpFD0', // Ep 3: Enemy Animated Special
+  '81446670': 'Mz4-38d3-AE', // Ep 4: Bridging the Rift Part 1 (25m Full Episode)
+  '81446671': 'ek7T9G1_dec', // Ep 5: Bridging the Rift Part 2 (Full Episode)
+  '81446672': 'b98Pr22aa4I', // Ep 6: Bridging the Rift Part 3 (Full Episode)
+  '81446673': 'n_dce26425w', // Ep 7: Bridging the Rift Part 4 (Full Episode)
+  '81446674': 'm230_645050', // Ep 8: Bridging the Rift Part 5 (Full Episode)
+  '81446675': 'fXmAurh012s', // Ep 9: Season Finale Preview
 };
+
+const CUSTOM_STREAM_STORAGE_KEY = 'vybe_episode_custom_streams_v1';
 
 interface NetflixCompanionDeckProps {
   roomCode: string;
@@ -69,85 +66,54 @@ export function NetflixCompanionDeck({
 }: NetflixCompanionDeckProps) {
   const titleMeta = resolveNetflixMetadata(watchId);
 
-  const [viewingMode, setViewingMode] = useState<NetflixViewingMode>('tab_cast');
-  const [bridgeStatus, setBridgeStatus] =
-    useState<ExtensionBridgeState>('connected_watching');
+  // Check if user attached a custom .mp4/.m3u8 file URL to this episode
+  const [customStreams, setCustomStreams] = useState<Record<string, string>>({});
+  const [sourceMode, setSourceMode] = useState<PlayerSourceMode>('youtube_embed');
+  const [localFileObjectUrl, setLocalFileObjectUrl] = useState<string | null>(null);
+  const [localFileName, setLocalFileName] = useState<string | null>(null);
+
+  const [showSourceDrawer, setShowSourceDrawer] = useState(false);
+  const [directUrlInput, setDirectUrlInput] = useState('');
+
   const [localTime, setLocalTime] = useState<number>(authoritativeTime);
   const [localPlaying, setLocalPlaying] = useState<boolean>(authoritativeIsPlaying);
-  const [duration, setDuration] = useState<number>(734);
-  const [showInstructions, setShowInstructions] = useState(false);
-  const [customNetflixInput, setCustomNetflixInput] = useState('');
+  const [duration, setDuration] = useState<number>(2580);
+  const [isMuted, setIsMuted] = useState(false);
 
-  // Live Tab Cast (WebRTC Screen/Tab Share of logged-in Netflix tab)
+  // Live Tab Cast
   const [isCastingTab, setIsCastingTab] = useState(false);
-  const [castError, setCastError] = useState<string | null>(null);
   const castVideoRef = useRef<HTMLVideoElement | null>(null);
   const castStreamRef = useRef<MediaStream | null>(null);
 
-  // Built-in HTML5 Synchronized Preview Video Player
-  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Direct HTML5 Video Player (for local .mp4/.mkv files or direct .mp4/.m3u8 URLs)
+  const html5VideoRef = useRef<HTMLVideoElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isApplyingRemoteRef = useRef(false);
 
-  // Listen for Chrome Extension content-script postMessage events
   useEffect(() => {
-    const handleWindowMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (!data || data.source !== 'VYBE_NETFLIX_EXTENSION') return;
-
-      if (data.type === 'EXTENSION_HEARTBEAT') {
-        if (data.pageType === 'watch' && String(data.watchId) === String(watchId)) {
-          setBridgeStatus('connected_watching');
-          if (typeof data.currentTime === 'number') {
-            setLocalTime(data.currentTime);
-          }
-          if (typeof data.isPlaying === 'boolean') {
-            setLocalPlaying(data.isPlaying);
-          }
-        } else if (data.pageType === 'unsupported') {
-          setBridgeStatus('unsupported_page');
-        } else {
-          setBridgeStatus('connected_idle');
+    try {
+      const raw = localStorage.getItem(CUSTOM_STREAM_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setCustomStreams(parsed);
+        if (parsed[watchId]) {
+          setSourceMode('direct_player');
         }
       }
+    } catch {
+      // Ignore
+    }
+  }, [watchId]);
 
-      if (data.type === 'NETFLIX_PLAYBACK_EVENT' && canControlPlayback) {
-        const nextTime =
-          typeof data.currentTime === 'number' ? data.currentTime : localTime;
-        const nextPlaying = Boolean(data.isPlaying);
-        setLocalTime(nextTime);
-        setLocalPlaying(nextPlaying);
-        onLocalPlaybackChange({
-          isPlaying: nextPlaying,
-          currentTime: nextTime,
-        });
-      }
-    };
+  const activeDirectVideoUrl =
+    localFileObjectUrl ||
+    customStreams[watchId] ||
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4';
 
-    window.addEventListener('message', handleWindowMessage);
-    window.postMessage(
-      {
-        source: 'VYBE_WEB_APP',
-        type: 'VYBE_ROOM_INIT',
-        roomCode,
-        watchId,
-        isPlaying: authoritativeIsPlaying,
-        currentTime: authoritativeTime,
-      },
-      '*'
-    );
+  const activeYoutubeEmbedId =
+    ARCANE_YOUTUBE_STREAMS[watchId] || 'Mz4-38d3-AE';
 
-    return () => window.removeEventListener('message', handleWindowMessage);
-  }, [
-    roomCode,
-    watchId,
-    authoritativeIsPlaying,
-    authoritativeTime,
-    canControlPlayback,
-    localTime,
-    onLocalPlaybackChange,
-  ]);
-
-  // Forward authoritative room sync changes to the Chrome Extension & Preview Player
+  // Sync authoritative playback state to HTML5 video player
   useEffect(() => {
     const elapsed = authoritativeIsPlaying
       ? Math.max(0, (Date.now() - authoritativeUpdatedAt) / 1000)
@@ -156,8 +122,8 @@ export function NetflixCompanionDeck({
     setLocalPlaying(authoritativeIsPlaying);
     setLocalTime(targetTime);
 
-    if (previewVideoRef.current && viewingMode === 'preview_player') {
-      const vid = previewVideoRef.current;
+    if (html5VideoRef.current && sourceMode === 'direct_player') {
+      const vid = html5VideoRef.current;
       isApplyingRemoteRef.current = true;
       if (Math.abs(vid.currentTime - targetTime) > 1.8) {
         vid.currentTime = Math.min(targetTime, vid.duration || targetTime);
@@ -171,33 +137,20 @@ export function NetflixCompanionDeck({
         isApplyingRemoteRef.current = false;
       }, 600);
     }
-
-    window.postMessage(
-      {
-        source: 'VYBE_WEB_APP',
-        type: 'APPLY_REMOTE_SYNC',
-        roomCode,
-        watchId,
-        isPlaying: authoritativeIsPlaying,
-        currentTime: targetTime,
-      },
-      '*'
-    );
   }, [
-    roomCode,
     watchId,
     authoritativeIsPlaying,
     authoritativeTime,
     authoritativeUpdatedAt,
-    viewingMode,
+    sourceMode,
   ]);
 
   // Periodic drift calculation
   useEffect(() => {
     const timer = setInterval(() => {
-      if (viewingMode === 'preview_player' && previewVideoRef.current) {
-        const cur = previewVideoRef.current.currentTime || 0;
-        const dur = previewVideoRef.current.duration || 734;
+      if (sourceMode === 'direct_player' && html5VideoRef.current) {
+        const cur = html5VideoRef.current.currentTime || 0;
+        const dur = html5VideoRef.current.duration || 2580;
         if (dur > 0) setDuration(dur);
         setLocalTime(cur);
         const elapsedAuth = authoritativeIsPlaying
@@ -223,7 +176,7 @@ export function NetflixCompanionDeck({
 
     return () => clearInterval(timer);
   }, [
-    viewingMode,
+    sourceMode,
     localPlaying,
     authoritativeIsPlaying,
     authoritativeTime,
@@ -231,30 +184,53 @@ export function NetflixCompanionDeck({
     onLocalTimeReport,
   ]);
 
-  // Start / Stop Live Netflix Tab Stream inside VYBE Player
+  // Load local .mp4 / .mkv / .webm video file from device
+  const handleSelectLocalVideoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (localFileObjectUrl) {
+      URL.revokeObjectURL(localFileObjectUrl);
+    }
+    const objUrl = URL.createObjectURL(file);
+    setLocalFileObjectUrl(objUrl);
+    setLocalFileName(file.name);
+    setSourceMode('direct_player');
+    setShowSourceDrawer(false);
+  };
+
+  // Attach a direct .mp4 / .m3u8 video URL to this episode
+  const handleSaveDirectStreamUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = directUrlInput.trim();
+    if (!url) return;
+    const updated = { ...customStreams, [watchId]: url };
+    setCustomStreams(updated);
+    try {
+      localStorage.setItem(CUSTOM_STREAM_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // Ignore
+    }
+    setDirectUrlInput('');
+    setSourceMode('direct_player');
+    setShowSourceDrawer(false);
+  };
+
   const handleStartTabCast = async () => {
-    setCastError(null);
     if (
       typeof navigator === 'undefined' ||
       !navigator.mediaDevices?.getDisplayMedia
     ) {
-      setCastError(
-        'Tab sharing requires a desktop browser (Chrome, Edge, Brave, or Firefox).'
-      );
       return;
     }
-
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          frameRate: { ideal: 60, max: 60 },
-        },
+        video: { frameRate: { ideal: 60, max: 60 } },
         audio: true,
       });
-
       castStreamRef.current = stream;
       setIsCastingTab(true);
-      setViewingMode('tab_cast');
+      setSourceMode('tab_cast');
+      setShowSourceDrawer(false);
 
       setTimeout(() => {
         if (castVideoRef.current) {
@@ -267,17 +243,8 @@ export function NetflixCompanionDeck({
         setIsCastingTab(false);
         castStreamRef.current = null;
       });
-
-      if (canControlPlayback) {
-        onLocalPlaybackChange({
-          isPlaying: true,
-          currentTime: localTime,
-        });
-      }
     } catch {
-      setCastError(
-        'Tab cast was cancelled. Click "1. Log into Netflix" to open your movie tab first, then click "2. Stream Netflix Tab Here" and select that tab.'
-      );
+      // Cancelled
     }
   };
 
@@ -287,27 +254,7 @@ export function NetflixCompanionDeck({
       castStreamRef.current = null;
     }
     setIsCastingTab(false);
-  };
-
-  // Open Netflix Login & Watch Window as a companion popup
-  const handleOpenNetflixWindow = () => {
-    const targetUrl = `https://www.netflix.com/watch/${watchId}?vybeRoom=${encodeURIComponent(
-      roomCode
-    )}`;
-    window.open(
-      targetUrl,
-      'VYBENetflixWindow',
-      'width=1280,height=760,menubar=no,toolbar=no,location=yes,status=no'
-    );
-  };
-
-  const handleLoadCustomNetflixUrl = (e: React.FormEvent) => {
-    e.preventDefault();
-    const nfId = extractNetflixWatchId(customNetflixInput);
-    if (!nfId) return;
-    const meta = resolveNetflixMetadata(nfId);
-    onSelectNetflixTitle(nfId, meta.title, meta.posterUrl);
-    setCustomNetflixInput('');
+    setSourceMode('youtube_embed');
   };
 
   const handleTogglePlay = () => {
@@ -315,10 +262,10 @@ export function NetflixCompanionDeck({
     const nextPlaying = !localPlaying;
     setLocalPlaying(nextPlaying);
 
-    if (viewingMode === 'preview_player' && previewVideoRef.current) {
+    if (sourceMode === 'direct_player' && html5VideoRef.current) {
       isApplyingRemoteRef.current = true;
-      if (nextPlaying) previewVideoRef.current.play().catch(() => {});
-      else previewVideoRef.current.pause();
+      if (nextPlaying) html5VideoRef.current.play().catch(() => {});
+      else html5VideoRef.current.pause();
       setTimeout(() => {
         isApplyingRemoteRef.current = false;
       }, 400);
@@ -333,9 +280,9 @@ export function NetflixCompanionDeck({
   const handleSeek = (nextTime: number) => {
     if (!canControlPlayback) return;
     setLocalTime(nextTime);
-    if (viewingMode === 'preview_player' && previewVideoRef.current) {
+    if (sourceMode === 'direct_player' && html5VideoRef.current) {
       isApplyingRemoteRef.current = true;
-      previewVideoRef.current.currentTime = nextTime;
+      html5VideoRef.current.currentTime = nextTime;
       setTimeout(() => {
         isApplyingRemoteRef.current = false;
       }, 400);
@@ -346,213 +293,45 @@ export function NetflixCompanionDeck({
     });
   };
 
-  const previewStreamUrl =
-    NETFLIX_PREVIEW_STREAMS[watchId] || NETFLIX_PREVIEW_STREAMS['80057281'];
-
   return (
-    <div className="relative flex flex-col justify-between w-full max-h-[46dvh] lg:max-h-none lg:h-full bg-[#07080D] overflow-hidden shrink-0 lg:shrink">
-      {/* Top Mode Switcher Bar: 3 Ways to Watch Netflix Together */}
-      <div className="relative z-20 flex items-center justify-between gap-2 border-b border-white/10 bg-[#0D0F18]/90 backdrop-blur-xl px-3 py-1.5 overflow-x-auto shrink-0">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setViewingMode('tab_cast')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
-              viewingMode === 'tab_cast'
-                ? 'bg-[#E50914]/25 border-[#E50914] text-white shadow-[0_0_20px_rgba(229,9,20,0.35)]'
-                : 'vybe-glass-pill text-slate-300 hover:text-white'
-            }`}
-          >
-            <MonitorUp className="h-3 w-3 text-rose-400" />
-            <span>1. Stream Tab</span>
-          </button>
+    <div className="relative flex flex-col w-full lg:h-full bg-[#05060A] select-none shrink-0 lg:shrink">
+      {/*Hidden File Input for Local .mp4 / .mkv Movie Files */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*,.mkv,.mp4,.webm"
+        onChange={handleSelectLocalVideoFile}
+        className="hidden"
+      />
 
-          <button
-            type="button"
-            onClick={() => setViewingMode('preview_player')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
-              viewingMode === 'preview_player'
-                ? 'bg-vybe-accent/25 border-vybe-accent text-white shadow-vybe-accent'
-                : 'vybe-glass-pill text-slate-300 hover:text-white'
-            }`}
-          >
-            <Film className="h-3 w-3 text-vybe-accentLight" />
-            <span>2. Preview Player</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewingMode('extension_popup')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition ${
-              viewingMode === 'extension_popup'
-                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-200'
-                : 'vybe-glass-pill text-slate-300 hover:text-white'
-            }`}
-          >
-            <Chrome className="h-3 w-3 text-emerald-400" />
-            <span>3. Extension</span>
-          </button>
-        </div>
-
-        {/* Paste Any Netflix URL or Title ID */}
-        {canControlPlayback && (
-          <form
-            onSubmit={handleLoadCustomNetflixUrl}
-            className="hidden sm:flex items-center gap-1.5 rounded-full vybe-glass-pill px-2.5 py-0.5 shrink-0"
-          >
-            <Search className="h-3 w-3 text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={customNetflixInput}
-              onChange={(e) => setCustomNetflixInput(e.target.value)}
-              placeholder="Paste netflix.com/watch/... link"
-              className="w-40 bg-transparent text-[11px] text-white placeholder-slate-400 focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="rounded-full bg-[#E50914] hover:bg-[#f6121d] px-2 py-0.5 text-[10px] font-bold text-white transition"
-            >
-              Load
-            </button>
-          </form>
+      {/* Main 16:9 Video Player Stage (Always Plays Video Immediately!) */}
+      <div className="relative w-full aspect-video lg:aspect-auto lg:flex-1 overflow-hidden bg-black shrink-0">
+        {sourceMode === 'youtube_embed' && (
+          <iframe
+            key={activeYoutubeEmbedId}
+            src={`https://www.youtube.com/embed/${activeYoutubeEmbedId}?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1`}
+            title={titleMeta.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+            className="absolute inset-0 w-full h-full border-0"
+          />
         )}
-      </div>
 
-      {/* ==================================================================== */}
-      {/* MODE 1: IN-APP NETFLIX TAB STREAM (NO EXTENSION REQUIRED)            */}
-      {/* ==================================================================== */}
-      {viewingMode === 'tab_cast' && (
-        <div className="relative flex-1 min-h-0 flex flex-col items-center justify-center p-3 sm:p-6 overflow-y-auto">
-          {/* Background Poster Blur */}
-          {!isCastingTab && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden opacity-25">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={titleMeta.posterUrl}
-                alt={titleMeta.title}
-                className="h-full w-full object-cover blur-xl scale-110"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#07080D] via-[#07080D]/80 to-[#07080D]/60" />
-            </div>
-          )}
-
-          {isCastingTab ? (
-            <div className="relative w-full h-full flex flex-col items-center justify-center bg-black rounded-2xl overflow-hidden border border-white/10">
-              <video
-                ref={castVideoRef}
-                autoPlay
-                playsInline
-                className="w-full h-full object-contain"
-              />
-              <div className="absolute top-3 right-3 flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 backdrop-blur-md px-3 py-1 text-xs font-bold text-emerald-300">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Streaming Netflix Tab Live</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={handleStopTabCast}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-rose-600/80 hover:bg-rose-600 px-3 py-1 text-xs font-bold text-white transition"
-                >
-                  <MonitorOff className="h-3.5 w-3.5" />
-                  <span>Stop Stream</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="relative z-10 max-w-2xl w-full rounded-3xl vybe-glass p-6 sm:p-8 text-center space-y-5">
-              <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-[#E50914]/20 border border-[#E50914]/40 px-4 py-1.5 text-xs font-bold text-rose-200">
-                <Tv className="h-4 w-4" />
-                <span>Selected Title: {titleMeta.title}</span>
-              </div>
-
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-white">
-                Host Netflix Directly Inside This Room
-              </h2>
-
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-lg mx-auto">
-                Just like Discord Go Live or Kosmi: sign into Netflix in a popup tab, then click{' '}
-                <strong>Stream Netflix Tab Here</strong> to project the movie and audio straight into this VYBE room for everyone—no extension install required!
-              </p>
-
-              {castError && (
-                <div className="rounded-2xl bg-amber-500/15 border border-amber-500/35 px-4 py-3 text-xs text-amber-200 text-left">
-                  {castError}
-                </div>
-              )}
-
-              {/* 2-Step Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleOpenNetflixWindow}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#E50914] hover:bg-[#f6121d] px-6 py-3 text-xs sm:text-sm font-bold text-white shadow-[0_8px_28px_-4px_rgba(229,9,20,0.6)] transition"
-                >
-                  <LogIn className="h-4 w-4" />
-                  <span>Step 1: Log In & Open Netflix Movie</span>
-                </button>
-
-                <GlowButton
-                  variant="primary"
-                  onClick={handleStartTabCast}
-                  className="px-6 py-3 text-xs sm:text-sm"
-                >
-                  <MonitorUp className="h-4 w-4" />
-                  <span>Step 2: Stream Netflix Tab Here</span>
-                </GlowButton>
-              </div>
-
-              {/* Quick Catalog Picker */}
-              {canControlPlayback && (
-                <div className="pt-4 border-t border-white/10">
-                  <div className="text-xs font-semibold text-slate-400 mb-2.5">
-                    Or switch to another Netflix title:
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    {SUPPORTED_NETFLIX_TITLES.map((item) => (
-                      <button
-                        key={item.watchId}
-                        type="button"
-                        onClick={() =>
-                          onSelectNetflixTitle(
-                            item.watchId,
-                            item.title,
-                            item.posterUrl
-                          )
-                        }
-                        className={`rounded-full px-3.5 py-1.5 text-xs font-medium border transition ${
-                          item.watchId === watchId
-                            ? 'bg-[#E50914]/25 border-[#E50914] text-white font-bold'
-                            : 'vybe-glass-pill text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        {item.title.split('—')[0].trim()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* MODE 2: BUILT-IN SYNCHRONIZED PREVIEW / CINEMA PLAYER                */}
-      {/* ==================================================================== */}
-      {viewingMode === 'preview_player' && (
-        <div className="relative flex-1 flex flex-col bg-black overflow-hidden">
+        {sourceMode === 'direct_player' && (
           <video
-            ref={previewVideoRef}
-            src={previewStreamUrl}
-            className="w-full h-full object-contain"
+            ref={html5VideoRef}
+            src={activeDirectVideoUrl}
+            controls
+            autoPlay
             playsInline
+            muted={isMuted}
+            className="absolute inset-0 w-full h-full object-contain bg-black"
             onPlay={() => {
               if (!isApplyingRemoteRef.current && canControlPlayback) {
                 setLocalPlaying(true);
                 onLocalPlaybackChange({
                   isPlaying: true,
-                  currentTime: previewVideoRef.current?.currentTime || 0,
+                  currentTime: html5VideoRef.current?.currentTime || 0,
                 });
               }
             }}
@@ -561,108 +340,141 @@ export function NetflixCompanionDeck({
                 setLocalPlaying(false);
                 onLocalPlaybackChange({
                   isPlaying: false,
-                  currentTime: previewVideoRef.current?.currentTime || 0,
+                  currentTime: html5VideoRef.current?.currentTime || 0,
                 });
               }
             }}
           />
-          <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-full vybe-glass-pill px-3.5 py-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-vybe-accentLight" />
-            <span className="text-xs font-bold text-white">
-              {titleMeta.title} (In-App Synchronized Preview)
-            </span>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* ==================================================================== */}
-      {/* MODE 3: TELEPARTY-STYLE CHROME EXTENSION SYNC                        */}
-      {/* ==================================================================== */}
-      {viewingMode === 'extension_popup' && (
-        <div className="relative flex-1 p-5 sm:p-7 flex flex-col justify-between overflow-y-auto">
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              {bridgeStatus === 'connected_watching' ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Extension Connected & Synced</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-3.5 py-1.5 text-xs font-semibold text-amber-300">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  <span>Waiting for Netflix Tab</span>
-                </span>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowInstructions((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 rounded-full vybe-glass-pill px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition"
-            >
-              <Chrome className="h-3.5 w-3.5 text-vybe-accentLight" />
-              <span>
-                {showInstructions ? 'Hide Extension Guide' : 'How to Install Extension'}
-              </span>
-            </button>
-          </div>
-
-          <div className="relative z-10 my-6 max-w-2xl space-y-4">
-            <h2 className="font-display text-2xl sm:text-4xl font-extrabold text-white leading-tight">
-              {titleMeta.title}
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              {titleMeta.synopsis}
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+        {sourceMode === 'tab_cast' && (
+          <div className="relative w-full h-full flex items-center justify-center bg-black">
+            <video
+              ref={castVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-contain"
+            />
+            {isCastingTab && (
               <button
                 type="button"
-                onClick={handleOpenNetflixWindow}
-                className="inline-flex items-center gap-2 rounded-full bg-[#E50914] hover:bg-[#f6121d] px-6 py-3 text-xs sm:text-sm font-bold text-white shadow-lg transition"
+                onClick={handleStopTabCast}
+                className="absolute top-3 right-3 z-20 inline-flex items-center gap-1.5 rounded-full bg-rose-600/90 hover:bg-rose-600 px-3 py-1 text-xs font-bold text-white transition"
               >
-                <ExternalLink className="h-4 w-4" />
-                <span>Launch Movie on Netflix.com with VYBE Sidebar</span>
+                <MonitorOff className="h-3.5 w-3.5" />
+                <span>Stop Tab Stream</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Slide-Down Episode & Video File Loader Drawer (Opens on "Episodes / Video File") */}
+        {showSourceDrawer && (
+          <div className="absolute inset-x-0 top-0 z-30 bg-[#0D0F18]/95 backdrop-blur-2xl border-b border-white/15 p-3.5 sm:p-4 space-y-3 shadow-2xl max-h-full overflow-y-auto">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-white">
+                {titleMeta.title} — Video Source & Episodes
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSourceDrawer(false)}
+                className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-slate-300 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* 1. Load Local Downloaded Movie File (.mp4 / .mkv) or Paste Direct Video URL */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="sm:col-span-4 inline-flex items-center justify-center gap-1.5 rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-3.5 py-2 text-xs font-bold text-white transition"
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {localFileName ? `File: ${localFileName}` : 'Load .MP4 / .MKV File'}
+                </span>
               </button>
 
-              <GlowButton
-                variant="secondary"
-                onClick={onRequestResync}
-                className="py-2.5 px-5 text-xs"
+              <form
+                onSubmit={handleSaveDirectStreamUrl}
+                className="sm:col-span-5 flex items-center gap-1.5 rounded-full vybe-glass-pill px-3 py-1"
               >
-                <RefreshCw className="h-3.5 w-3.5 text-vybe-accentLight" />
-                <span>Sync Timestamps</span>
-              </GlowButton>
-            </div>
-          </div>
+                <Link2 className="h-3.5 w-3.5 text-vybe-accentLight shrink-0" />
+                <input
+                  type="text"
+                  value={directUrlInput}
+                  onChange={(e) => setDirectUrlInput(e.target.value)}
+                  placeholder="Or paste direct .mp4 / .m3u8 video link"
+                  className="flex-1 min-w-0 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="rounded-full bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[10px] font-bold text-white shrink-0"
+                >
+                  Play URL
+                </button>
+              </form>
 
-          {showInstructions && (
-            <div className="relative z-10 rounded-3xl vybe-glass p-5 text-xs space-y-2">
-              <div className="font-bold text-white flex items-center gap-2">
-                <Chrome className="h-4 w-4 text-vybe-accentLight" />
-                <span>Install the VYBE Teleparty Extension (30 Seconds)</span>
+              <div className="sm:col-span-3 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleStartTabCast}
+                  className="flex-1 inline-flex items-center justify-center gap-1 rounded-full vybe-glass-pill hover:bg-white/10 px-2.5 py-2 text-[11px] font-semibold text-slate-200"
+                  title="Cast another browser tab into this player"
+                >
+                  <MonitorUp className="h-3.5 w-3.5 text-rose-400" />
+                  <span>Cast Tab</span>
+                </button>
+                <a
+                  href={`https://www.netflix.com/watch/${watchId}?vybeRoom=${encodeURIComponent(
+                    roomCode
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-1 rounded-full bg-[#E50914]/25 border border-[#E50914]/50 px-2.5 py-2 text-[11px] font-bold text-rose-200"
+                  title="Open this episode on Netflix.com"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Netflix</span>
+                </a>
               </div>
-              <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
-                <li>
-                  Open Chrome and go to <code className="text-white">chrome://extensions</code>.
-                </li>
-                <li>
-                  Turn on <strong>Developer mode</strong> (top-right) and click{' '}
-                  <strong>Load unpacked</strong>.
-                </li>
-                <li>
-                  Select the <code className="text-vybe-accentLight">chrome-extension</code> folder from this project.
-                </li>
-                <li>
-                  Click <strong>Launch Movie on Netflix.com</strong> above — VYBE injects a live chat & floating reaction bar directly inside Netflix!
-                </li>
-              </ol>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* Compact Bottom Synchronized Master Timeline & Transport Bar */}
+            {/* 2. Switch Arcane Episodes (S1:E1 – S1:E9) */}
+            {canControlPlayback && (
+              <div>
+                <div className="text-[11px] font-semibold text-slate-400 mb-1.5">
+                  Switch Arcane Season 1 Episode:
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {SUPPORTED_NETFLIX_TITLES.map((ep, i) => (
+                    <button
+                      key={ep.watchId}
+                      type="button"
+                      onClick={() => {
+                        onSelectNetflixTitle(ep.watchId, ep.title, ep.posterUrl);
+                        setShowSourceDrawer(false);
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 border text-[11px] shrink-0 transition ${
+                        ep.watchId === watchId
+                          ? 'bg-[#E50914]/30 border-[#E50914] text-white font-bold'
+                          : 'vybe-glass-pill text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Tv className="h-3 w-3 text-rose-400" />
+                      <span>Ep {i + 1}: {ep.title.split('—')[1]?.replace(/S1:E\d+\s*/, '').trim() || ep.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Single Compact Bottom Synchronized Transport Bar */}
       <div className="border-t border-white/[0.08] bg-[#0D0F18] px-3 py-2 flex items-center gap-2.5 shrink-0">
         <button
           type="button"
@@ -689,13 +501,34 @@ export function NetflixCompanionDeck({
           value={Math.min(localTime, Math.max(duration, 100))}
           disabled={!canControlPlayback}
           onChange={(e) => handleSeek(Number(e.target.value))}
-          aria-label="Netflix master sync timeline"
+          aria-label="Playback seek slider"
           className="flex-1 min-w-0 h-1.5 rounded-lg accent-[#E50914] cursor-pointer"
         />
 
         <span className="text-[10px] sm:text-[11px] font-mono text-slate-400 shrink-0">
           {formatTimestamp(duration)}
         </span>
+
+        <button
+          type="button"
+          onClick={() => setIsMuted((m) => !m)}
+          className="hidden sm:inline-flex rounded-full p-1 text-slate-300 hover:text-white"
+        >
+          {isMuted ? (
+            <VolumeX className="h-3.5 w-3.5 text-rose-400" />
+          ) : (
+            <Volume2 className="h-3.5 w-3.5" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowSourceDrawer((v) => !v)}
+          className="inline-flex items-center gap-1 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition shrink-0"
+        >
+          <Film className="h-3 w-3 text-rose-400" />
+          <span>{showSourceDrawer ? 'Hide' : 'Episodes / File'}</span>
+        </button>
 
         <button
           type="button"
