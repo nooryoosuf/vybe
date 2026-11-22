@@ -4,7 +4,7 @@
 // ============================================================================
 
 let sessionState = {
-  vybeBaseUrl: 'http://localhost:3000',
+  vybeBaseUrl: 'https://vybe.nooor-yoosuf.workers.dev',
   roomCode: 'NFX-808',
   connected: true,
   lastWatchId: null,
