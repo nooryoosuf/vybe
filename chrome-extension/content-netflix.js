@@ -1,7 +1,10 @@
 // ============================================================================
-// VYBE Content Script for Netflix (content-netflix.js)
-// Detects Netflix HTML5 <video> playback timestamps on supported /watch/* pages
-// and synchronizes play, pause, and seek commands without bypassing DRM.
+// VYBE Teleparty-Style Content Script for Netflix (content-netflix.js)
+// 1. Detects Netflix HTML5 <video> playback timestamps on /watch/* pages.
+// 2. Synchronizes play, pause, and seek commands across the VYBE room.
+// 3. Injects a Teleparty-style collapsible VYBE Watch Party dock & sidebar
+//    directly onto netflix.com so users can host, invite, chat, and react
+//    while logged into their own Netflix session.
 // ============================================================================
 
 (function () {
@@ -9,8 +12,9 @@
   let remoteGuardTimeout = null;
   let boundVideoElement = null;
   let activeRoomCode = 'NFX-808';
+  let vybeBaseUrl = 'https://vybe.nooryoosuf.com';
+  let sidebarOpen = false;
 
-  // Extract ?vybeRoom=CODE if launched from VYBE Companion Deck
   try {
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('vybeRoom');
@@ -24,6 +28,14 @@
   } catch {
     // Ignore
   }
+
+  chrome.runtime.sendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
+    if (res && res.state) {
+      if (res.state.roomCode) activeRoomCode = res.state.roomCode;
+      if (res.state.vybeBaseUrl) vybeBaseUrl = res.state.vybeBaseUrl;
+      ensureOverlayDock();
+    }
+  });
 
   function lockRemoteSync(ms = 900) {
     isApplyingRemoteSync = true;
@@ -87,7 +99,6 @@
     return video;
   }
 
-  // Apply incoming authoritative sync command from VYBE room
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || msg.type !== 'APPLY_TO_NETFLIX_VIDEO') return;
     const video = bindToVideoElement();
@@ -103,15 +114,12 @@
     } else if (!msg.isPlaying && !video.paused) {
       video.pause();
     }
-    updateStatusBadge(
-      `VYBE ${activeRoomCode} • ${msg.isPlaying ? 'Synced Playing' : 'Synced Paused'}`
-    );
   });
 
-  // Periodic heartbeat to report Netflix page state and timestamp
   setInterval(() => {
     const info = detectNetflixPageInfo();
     const video = bindToVideoElement();
+    ensureOverlayDock();
     chrome.runtime.sendMessage({
       type: 'NETFLIX_TAB_HEARTBEAT',
       pageType: info.pageType,
@@ -121,15 +129,68 @@
     });
   }, 1500);
 
-  // Inject non-intrusive VYBE Status Pill on Netflix watch pages
-  let badgeEl = null;
-  function updateStatusBadge(text) {
-    if (!badgeEl) {
-      badgeEl = document.createElement('div');
-      badgeEl.style.cssText =
-        'position:fixed;top:16px;right:16px;z-index:999999;background:rgba(13,15,24,0.92);color:#fff;border:1px solid rgba(109,93,251,0.5);border-radius:12px;padding:6px 12px;font-family:system-ui,sans-serif;font-size:12px;font-weight:600;box-shadow:0 10px 25px rgba(0,0,0,0.6);pointer-events:none;';
-      document.body.appendChild(badgeEl);
-    }
-    badgeEl.textContent = text;
+  // Teleparty-style Floating Pill & Collapsible Sidebar on Netflix.com
+  let rootDock = null;
+  let sidebarFrame = null;
+
+  function ensureOverlayDock() {
+    if (rootDock) return;
+
+    rootDock = document.createElement('div');
+    rootDock.style.cssText =
+      'position:fixed;top:16px;right:18px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(13,15,24,0.88);backdrop-filter:blur(18px);color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:6px 14px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,0.65);';
+
+    const statusDot = document.createElement('span');
+    statusDot.style.cssText =
+      'width:8px;height:8px;border-radius:999px;background:#10B981;display:inline-block;';
+
+    const label = document.createElement('span');
+    label.textContent = `VYBE • ${activeRoomCode}`;
+
+    const inviteBtn = document.createElement('button');
+    inviteBtn.textContent = 'Copy Invite';
+    inviteBtn.style.cssText =
+      'background:rgba(109,93,251,0.28);color:#fff;border:1px solid rgba(109,93,251,0.6);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;';
+    inviteBtn.onclick = () => {
+      const url = `${vybeBaseUrl}/room/${activeRoomCode}`;
+      navigator.clipboard.writeText(url).catch(() => {});
+      inviteBtn.textContent = 'Copied Link!';
+      setTimeout(() => {
+        inviteBtn.textContent = 'Copy Invite';
+      }, 2000);
+    };
+
+    const toggleSidebarBtn = document.createElement('button');
+    toggleSidebarBtn.textContent = 'Open Party Chat';
+    toggleSidebarBtn.style.cssText =
+      'background:linear-gradient(90deg,#6D5DFB,#7C3AED);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;';
+    toggleSidebarBtn.onclick = () => {
+      sidebarOpen = !sidebarOpen;
+      if (sidebarOpen) {
+        toggleSidebarBtn.textContent = 'Hide Chat';
+        openSidebarIframe();
+      } else {
+        toggleSidebarBtn.textContent = 'Open Party Chat';
+        if (sidebarFrame) {
+          sidebarFrame.remove();
+          sidebarFrame = null;
+        }
+      }
+    };
+
+    rootDock.appendChild(statusDot);
+    rootDock.appendChild(label);
+    rootDock.appendChild(inviteBtn);
+    rootDock.appendChild(toggleSidebarBtn);
+    document.body.appendChild(rootDock);
+  }
+
+  function openSidebarIframe() {
+    if (sidebarFrame) return;
+    sidebarFrame = document.createElement('iframe');
+    sidebarFrame.src = `${vybeBaseUrl}/room/${activeRoomCode}`;
+    sidebarFrame.style.cssText =
+      'position:fixed;top:0;right:0;bottom:0;width:390px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;box-shadow:-16px 0 40px rgba(0,0,0,0.8);';
+    document.body.appendChild(sidebarFrame);
   }
 })();
