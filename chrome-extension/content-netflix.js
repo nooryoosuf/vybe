@@ -2,16 +2,16 @@
 // VYBE Teleparty-Style Content Script for Netflix (content-netflix.js)
 // 1. Detects Netflix HTML5 <video> playback timestamps on /watch/* pages.
 // 2. Synchronizes play, pause, and seek commands across the VYBE room.
-// 3. Injects a Teleparty-style collapsible VYBE Watch Party dock & sidebar
-//    directly onto netflix.com so users can host, invite, chat, and react
-//    while logged into their own Netflix session.
+// 3. Employs MutationObserver for resilient video element tracking.
+// 4. Injects a Teleparty-style collapsible VYBE Watch Party dock & sidebar
+//    directly onto netflix.com so users can host, invite, chat, and react.
 // ============================================================================
 
 (function () {
   let isApplyingRemoteSync = false;
   let remoteGuardTimeout = null;
   let boundVideoElement = null;
-  let activeRoomCode = 'NFX-808';
+  let activeRoomCode = 'VYB-4K1';
   let vybeBaseUrl = 'https://vybe.nooryoosuf.com';
   let sidebarOpen = false;
 
@@ -37,7 +37,7 @@
     }
   });
 
-  function lockRemoteSync(ms = 900) {
+  function lockRemoteSync(ms = 1100) {
     isApplyingRemoteSync = true;
     if (remoteGuardTimeout) clearTimeout(remoteGuardTimeout);
     remoteGuardTimeout = setTimeout(() => {
@@ -60,7 +60,7 @@
 
     boundVideoElement = video;
 
-    video.addEventListener('play', () => {
+    const handlePlay = () => {
       if (isApplyingRemoteSync) return;
       const info = detectNetflixPageInfo();
       if (info.pageType !== 'watch') return;
@@ -70,9 +70,9 @@
         isPlaying: true,
         currentTime: video.currentTime,
       });
-    });
+    };
 
-    video.addEventListener('pause', () => {
+    const handlePause = () => {
       if (isApplyingRemoteSync) return;
       const info = detectNetflixPageInfo();
       if (info.pageType !== 'watch') return;
@@ -82,9 +82,9 @@
         isPlaying: false,
         currentTime: video.currentTime,
       });
-    });
+    };
 
-    video.addEventListener('seeked', () => {
+    const handleSeeked = () => {
       if (isApplyingRemoteSync) return;
       const info = detectNetflixPageInfo();
       if (info.pageType !== 'watch') return;
@@ -94,21 +94,34 @@
         isPlaying: !video.paused,
         currentTime: video.currentTime,
       });
-    });
+    };
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('seeked', handleSeeked);
 
     return video;
   }
+
+  // MutationObserver to detect when Netflix remounts the video element
+  const observer = new MutationObserver(() => {
+    bindToVideoElement();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || msg.type !== 'APPLY_TO_NETFLIX_VIDEO') return;
     const video = bindToVideoElement();
     if (!video) return;
 
-    lockRemoteSync(1000);
+    lockRemoteSync(1200);
     const targetTime = Number(msg.currentTime || 0);
-    if (Math.abs(video.currentTime - targetTime) > 1.8) {
+
+    // Apply seek if drift exceeds threshold
+    if (Math.abs(video.currentTime - targetTime) > 1.5) {
       video.currentTime = targetTime;
     }
+
     if (msg.isPlaying && video.paused) {
       video.play().catch(() => {});
     } else if (!msg.isPlaying && !video.paused) {
@@ -116,6 +129,7 @@
     }
   });
 
+  // Regular telemetry heartbeat
   setInterval(() => {
     const info = detectNetflixPageInfo();
     const video = bindToVideoElement();
@@ -127,9 +141,9 @@
       isPlaying: video ? !video.paused : false,
       currentTime: video ? video.currentTime : 0,
     });
-  }, 1500);
+  }, 2000);
 
-  // Teleparty-style Floating Pill & Collapsible Sidebar on Netflix.com
+  // Floating dock & sidebar UI
   let rootDock = null;
   let sidebarFrame = null;
 
@@ -138,7 +152,7 @@
 
     rootDock = document.createElement('div');
     rootDock.style.cssText =
-      'position:fixed;top:16px;right:18px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(13,15,24,0.88);backdrop-filter:blur(18px);color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:6px 14px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,0.65);';
+      'position:fixed;top:16px;right:18px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(13,15,24,0.92);backdrop-filter:blur(18px);color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:6px 14px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,0.65);';
 
     const statusDot = document.createElement('span');
     statusDot.style.cssText =

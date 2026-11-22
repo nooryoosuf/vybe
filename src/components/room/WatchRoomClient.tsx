@@ -43,6 +43,9 @@ import {
 } from '@/types/vybe';
 import { YouTubeSyncPlayer } from '@/components/room/YouTubeSyncPlayer';
 import { NetflixCompanionDeck } from '@/components/room/NetflixCompanionDeck';
+import { TheaterStage } from '@/components/room/TheaterStage';
+import { PlaybackManager } from '@/lib/playback/playback-manager';
+import { SyncEngine } from '@/lib/playback/sync-engine';
 import { FloatingReactionsLayer } from '@/components/room/FloatingReactionsLayer';
 import { LiveChatPanel } from '@/components/room/LiveChatPanel';
 import { WatchQueuePanel } from '@/components/room/WatchQueuePanel';
@@ -110,6 +113,37 @@ export function WatchRoomClient() {
   const lastHeartbeatSentRef = useRef<number>(0);
   const joinedOnceRef = useRef<boolean>(false);
 
+  const playbackManagerRef = useRef<PlaybackManager | null>(null);
+  if (!playbackManagerRef.current) {
+    playbackManagerRef.current = new PlaybackManager();
+  }
+
+  const syncEngineRef = useRef<SyncEngine | null>(null);
+  if (!syncEngineRef.current) {
+    syncEngineRef.current = new SyncEngine({
+      playbackManager: playbackManagerRef.current,
+      onPublishSync: (state) => {
+        setRoom((prev) => (prev ? { ...prev, playback: state } : prev));
+        publishRealtimeEvent({
+          type: 'PLAYBACK_SYNC',
+          roomCode,
+          playback: state,
+          senderId: user?.id || 'host',
+        });
+      },
+      onDriftReport: (drift) => {
+        setLocalDriftSec(drift);
+      },
+    });
+  }
+
+  useEffect(() => {
+    return () => {
+      playbackManagerRef.current?.destroy();
+      syncEngineRef.current?.destroy();
+    };
+  }, []);
+
   // Publish event to Server Realtime Broker + Browser BroadcastChannel + Supabase Realtime
   const publishRealtimeEvent = useCallback(
     async (event: RealtimeRoomEvent) => {
@@ -164,6 +198,7 @@ export function WatchRoomClient() {
             playback: { ...event.playback },
           };
         });
+        syncEngineRef.current?.handleRemoteSync(event.playback);
       } else if (event.type === 'REQUEST_SYNC') {
         setRoom((prev) => {
           if (!prev || !user) return prev;
@@ -455,6 +490,20 @@ export function WatchRoomClient() {
         (room.controlPermission === 'cohosts' && isModerator) ||
         room.controlPermission === 'everyone')
   );
+
+  useEffect(() => {
+    if (syncEngineRef.current && room && user) {
+      syncEngineRef.current.updateContext({
+        isHost,
+        userRole: currentParticipant?.role || 'member',
+        controlPermission: room.controlPermission,
+        userId: user.id,
+        userName: user.displayName,
+        roomId: room.id,
+        roomCode: room.code,
+      });
+    }
+  }, [room, user, isHost, currentParticipant?.role]);
 
   // Authoritative playback state change handler
   const handleLocalPlaybackChange = useCallback(
@@ -1202,49 +1251,23 @@ export function WatchRoomClient() {
             onMouseEnter={() => setIsVideoHovered(true)}
             onMouseLeave={() => setIsVideoHovered(false)}
           >
-            {room.platform === 'youtube' ? (
-              <YouTubeSyncPlayer
-                videoId={room.playback.videoId}
-                videoTitle={room.playback.videoTitle}
-                authoritativeIsPlaying={room.playback.isPlaying}
-                authoritativeTime={room.playback.currentTime}
-                authoritativeUpdatedAt={room.playback.updatedAt}
-                authoritativeSeq={room.playback.seq}
-                canControlPlayback={canControlPlayback}
-                autoSyncThresholdSec={
-                  user?.preferences?.autoSyncThresholdSec || 2.0
-                }
-                onLocalPlaybackChange={handleLocalPlaybackChange}
-                onLocalTimeReport={(cur, drift) =>
-                  handleLocalTimeReport(cur, drift, true)
-                }
-                onVideoEnded={() => {
-                  if (canControlPlayback && room.queue.length > 0) {
-                    executeQueueAction({ queueOp: 'PLAY_NEXT' });
-                  }
-                }}
-                onRequestResync={handleRequestResync}
-                onSwitchYouTubeVideo={(vidId, title, thumb) =>
-                  handleDirectSwitchMedia('youtube', vidId, title, thumb)
-                }
-              />
-            ) : (
-              <NetflixCompanionDeck
-                roomCode={room.code}
-                watchId={room.playback.netflixWatchId || room.playback.videoId}
-                videoTitle={room.playback.videoTitle}
-                authoritativeIsPlaying={room.playback.isPlaying}
-                authoritativeTime={room.playback.currentTime}
-                authoritativeUpdatedAt={room.playback.updatedAt}
-                canControlPlayback={canControlPlayback}
-                onLocalPlaybackChange={handleLocalPlaybackChange}
-                onLocalTimeReport={handleLocalTimeReport}
-                onSelectNetflixTitle={(wId, title, posterUrl) =>
-                  handleDirectSwitchMedia('netflix', wId, title, posterUrl)
-                }
-                onRequestResync={handleRequestResync}
-              />
-            )}
+            <TheaterStage
+              playbackManager={playbackManagerRef.current!}
+              syncEngine={syncEngineRef.current!}
+              roomCode={room.code}
+              isHost={isHost}
+              canControlPlayback={canControlPlayback}
+              activePlatform={room.platform}
+              activeVideoId={
+                room.platform === 'netflix'
+                  ? room.playback.netflixWatchId || room.playback.videoId
+                  : room.playback.videoId
+              }
+              activeVideoTitle={room.playback.videoTitle}
+              activeVideoThumbnail={room.playback.videoThumbnail}
+              onRequestResync={handleRequestResync}
+              onSwitchMedia={handleDirectSwitchMedia}
+            />
 
             {/* Animated Floating Reactions Layer */}
             <FloatingReactionsLayer
