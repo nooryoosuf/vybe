@@ -2,13 +2,14 @@
   "manifest_version": 3,
   "name": "VYBE — Netflix Social Watch Party Sync",
   "version": "1.0.0",
-  "description": "Synchronizes Netflix playback timestamps, play/pause/seek commands, and floating reactions with your VYBE Watch Party room.",
+  "description": "Observes Netflix playback on netflix.com and synchronizes play, pause, and seek commands with your VYBE Watch Party room. Each viewer streams through their own Netflix account — protected content plays on the official Netflix site; no embedding or proxy."
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "*://*.netflix.com/*",
     "https://vybe.nooryoosuf.com/*",
     "http://localhost:3000/*",
     "http://127.0.0.1:3000/*",
+    "http://localhost:3100/*",
     "https://*.pages.dev/*",
     "https://*.workers.dev/*"
   ],
@@ -30,6 +31,7 @@
         "https://vybe.nooryoosuf.com/*",
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*",
+        "http://localhost:3100/*",
         "https://*.pages.dev/*",
         "https://*.workers.dev/*"
       ],

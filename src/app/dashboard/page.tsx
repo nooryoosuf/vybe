@@ -6,8 +6,6 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Plus,
-  Users,
-  Youtube,
   Tv,
   Play,
   Mail,
@@ -21,11 +19,7 @@ import {
   Sliders,
   Film,
   UserPlus,
-  UserMinus,
   AtSign,
-  ThumbsUp,
-  MessageSquarePlus,
-  Trash2,
 } from 'lucide-react';
 import { Navbar } from '@/components/layout/Navbar';
 import {
@@ -37,23 +31,16 @@ import { AsciiWaveCanvas } from '@/components/ui/AsciiBackdrop';
 import { CreateRoomModal } from '@/components/modals/CreateRoomModal';
 import { useVybe } from '@/context/VybeContext';
 import {
-  MovieRequestItem,
   PlatformType,
   RoomInvitation,
   SiteMovieItem,
-  UserProfile,
   WatchRoom,
 } from '@/types/vybe';
 import {
   buildClientRoomObject,
   extractNetflixWatchId,
-  extractYouTubeId,
-  fetchYouTubeMetadata,
-  getLocalMovieRequests,
-  getLocalRoomsMap,
   getLocalSiteMovies,
   resolveNetflixMetadata,
-  saveLocalMovieRequests,
   saveLocalRoom,
   saveLocalSiteMovie,
 } from '@/lib/utils';
@@ -65,15 +52,10 @@ export default function DashboardPage() {
     continueAsGuest,
     setAuthModalOpen,
     setProfileModalOpen,
-    addFriend,
-    removeFriend,
     addToast,
   } = useVybe();
 
-  const [rooms, setRooms] = useState<WatchRoom[]>([]);
-  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
   const [siteMovies, setSiteMovies] = useState<SiteMovieItem[]>([]);
-  const [movieRequests, setMovieRequests] = useState<MovieRequestItem[]>([]);
   const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,61 +64,34 @@ export default function DashboardPage() {
     platform: PlatformType;
     videoId?: string;
     videoTitle?: string;
-  }>({ platform: 'youtube' });
+  }>({ platform: 'netflix' });
 
   const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [friendUsernameInput, setFriendUsernameInput] = useState('');
-  const [addingFriend, setAddingFriend] = useState(false);
+
 
   // Add Movie to Site Library Modal/Drawer
   const [showAddMovieForm, setShowAddMovieForm] = useState(false);
   const [newMovieTitle, setNewMovieTitle] = useState('');
   const [newMovieGenre, setNewMovieGenre] = useState('Sci-Fi • Thriller');
-  const [newMoviePlatform, setNewMoviePlatform] =
-    useState<PlatformType>('youtube');
+  const newMoviePlatform = 'netflix' as PlatformType;
   const [newMovieUrl, setNewMovieUrl] = useState('');
-  const [newMovieDirectStreamUrl, setNewMovieDirectStreamUrl] = useState('');
   const [addingMovie, setAddingMovie] = useState(false);
-  const [fulfillingRequestId, setFulfillingRequestId] = useState<string | null>(null);
   const [launchingMovieId, setLaunchingMovieId] = useState<string | null>(null);
 
-  // Request a Movie Form
-  const [reqTitle, setReqTitle] = useState('');
-  const [reqPlatform, setReqPlatform] = useState<PlatformType>('netflix');
-  const [reqNote, setReqNote] = useState('');
-  const [submittingRequest, setSubmittingRequest] = useState(false);
-
   const fetchDashboardState = useCallback(async () => {
-    const localMap = getLocalRoomsMap();
     const localMovies = getLocalSiteMovies();
-    const localRequests = getLocalMovieRequests();
     try {
       const uid = user?.id || 'default';
       const res = await fetch(`/api/state?userId=${encodeURIComponent(uid)}`);
       if (res.ok) {
         const data = await res.json();
-        const serverRooms: WatchRoom[] = data.rooms || [];
-        const mergedMap: Record<string, WatchRoom> = { ...localMap };
-        for (const r of serverRooms) {
-          mergedMap[r.code.toUpperCase()] = r;
-        }
-        setRooms(Object.values(mergedMap).filter((r) => r.isActive));
-        setRegisteredUsers(data.users || []);
-        setInvitations(data.invitations || []);
-
         const serverMovies: SiteMovieItem[] = data.siteMovies || [];
         const movieMap = new Map<string, SiteMovieItem>();
         for (const m of [...localMovies, ...serverMovies]) {
           movieMap.set(m.id, m);
         }
         setSiteMovies(Array.from(movieMap.values()));
-
-        const serverReqs: MovieRequestItem[] = data.movieRequests || [];
-        const reqMap = new Map<string, MovieRequestItem>();
-        for (const r of [...localRequests, ...serverReqs]) {
-          reqMap.set(r.id, r);
-        }
-        setMovieRequests(Array.from(reqMap.values()));
+        setInvitations(data.invitations || []);
         return;
       }
     } catch {
@@ -144,9 +99,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-    setRooms(Object.values(localMap).filter((r) => r.isActive));
     setSiteMovies(localMovies);
-    setMovieRequests(localRequests);
   }, [user?.id]);
 
   useEffect(() => {
@@ -245,39 +198,21 @@ export default function DashboardPage() {
       let videoId = '';
       let resolvedTitle = newMovieTitle.trim();
       let thumbnailUrl = '';
-      let durationLabel = 'Full Movie';
+      let durationLabel = 'Netflix';
 
-      if (newMoviePlatform === 'youtube') {
-        const ytId = extractYouTubeId(newMovieUrl);
-        if (!ytId) {
-          addToast({
-            title: 'Invalid YouTube Link',
-            description: 'Paste a valid YouTube video URL or 11-character ID.',
-            variant: 'error',
-          });
-          return;
-        }
-        videoId = ytId;
-        const meta = await fetchYouTubeMetadata(ytId);
-        if (!resolvedTitle) resolvedTitle = meta.title;
-        thumbnailUrl = meta.thumbnailUrl;
-        durationLabel = 'YouTube HD';
-      } else {
-        const nfId = extractNetflixWatchId(newMovieUrl);
-        if (!nfId) {
-          addToast({
-            title: 'Invalid Netflix Link or ID',
-            description: 'Paste a netflix.com/watch/... link or numeric Watch ID.',
-            variant: 'error',
-          });
-          return;
-        }
-        videoId = nfId;
-        const nfMeta = resolveNetflixMetadata(nfId);
-        if (!resolvedTitle) resolvedTitle = nfMeta.title;
-        thumbnailUrl = nfMeta.posterUrl;
-        durationLabel = 'Netflix';
+      const nfId = extractNetflixWatchId(newMovieUrl);
+      if (!nfId) {
+        addToast({
+          title: 'Invalid Netflix Link or ID',
+          description: 'Paste a netflix.com/watch/... link or numeric Watch ID.',
+          variant: 'error',
+        });
+        return;
       }
+      videoId = nfId;
+      const nfMeta = resolveNetflixMetadata(nfId);
+      if (!resolvedTitle) resolvedTitle = nfMeta.title;
+      thumbnailUrl = nfMeta.posterUrl;
 
       const newMovie: SiteMovieItem = {
         id: `mov-custom-${Date.now()}`,
@@ -285,24 +220,12 @@ export default function DashboardPage() {
         genre: newMovieGenre.trim() || 'Movie Night',
         durationLabel,
         year: 'Added by ' + (user?.displayName || 'Friend'),
-        platform: newMoviePlatform,
+        platform: 'netflix',
         videoId,
-        directVideoUrl: newMovieDirectStreamUrl.trim() || undefined,
         thumbnailUrl,
         description: `Added to VYBE by ${user?.displayName || 'a friend'} — click Watch with Friends to launch a room!`,
         addedBy: user?.displayName || 'Friend',
       };
-
-      if (newMovieDirectStreamUrl.trim() && typeof window !== 'undefined') {
-        try {
-          window.localStorage.setItem(
-            `vybe_custom_stream_${videoId}`,
-            newMovieDirectStreamUrl.trim()
-          );
-        } catch {
-          // ignore
-        }
-      }
 
       const updatedLocal = saveLocalSiteMovie(newMovie);
       setSiteMovies(updatedLocal);
@@ -318,13 +241,7 @@ export default function DashboardPage() {
 
       setNewMovieTitle('');
       setNewMovieUrl('');
-      setNewMovieDirectStreamUrl('');
       setShowAddMovieForm(false);
-
-      if (fulfillingRequestId) {
-        handleUpdateRequestStatus(fulfillingRequestId, 'added');
-        setFulfillingRequestId(null);
-      }
 
       addToast({
         title: `"${newMovie.title}" added to Movies!`,
@@ -333,122 +250,6 @@ export default function DashboardPage() {
       });
     } finally {
       setAddingMovie(false);
-    }
-  };
-
-  // Submit a Movie Request
-  const handleCreateMovieRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reqTitle.trim()) return;
-    setSubmittingRequest(true);
-    try {
-      let activeUser = user;
-      if (!activeUser) {
-        activeUser = await continueAsGuest('Friend');
-      }
-      const newReq: MovieRequestItem = {
-        id: `req-${Date.now()}`,
-        title: reqTitle.trim(),
-        platform: reqPlatform,
-        note: reqNote.trim(),
-        requestedById: activeUser.id,
-        requestedByName: activeUser.displayName,
-        requestedByUsername: activeUser.username,
-        upvoterIds: [activeUser.id],
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      const updated = [newReq, ...movieRequests];
-      setMovieRequests(updated);
-      saveLocalMovieRequests(updated);
-
-      await fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'CREATE_MOVIE_REQUEST',
-          requestItem: newReq,
-        }),
-      }).catch(() => {});
-
-      setReqTitle('');
-      setReqNote('');
-      addToast({
-        title: 'Movie Requested!',
-        description: `"${newReq.title}" is now on the request board.`,
-        variant: 'success',
-      });
-    } finally {
-      setSubmittingRequest(false);
-    }
-  };
-
-  const handleVoteMovieRequest = async (requestId: string) => {
-    const uid = user?.id || 'guest';
-    const updated = movieRequests
-      .map((r) => {
-        if (r.id !== requestId) return r;
-        const exists = r.upvoterIds.includes(uid);
-        return {
-          ...r,
-          upvoterIds: exists
-            ? r.upvoterIds.filter((id) => id !== uid)
-            : [...r.upvoterIds, uid],
-        };
-      })
-      .sort((a, b) => b.upvoterIds.length - a.upvoterIds.length);
-
-    setMovieRequests(updated);
-    saveLocalMovieRequests(updated);
-
-    await fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'VOTE_MOVIE_REQUEST',
-        requestId,
-        userId: uid,
-      }),
-    }).catch(() => {});
-  };
-
-  const handleUpdateRequestStatus = async (
-    requestId: string,
-    status: 'added' | 'delete'
-  ) => {
-    const updated =
-      status === 'delete'
-        ? movieRequests.filter((r) => r.id !== requestId)
-        : movieRequests.map((r) =>
-            r.id === requestId ? { ...r, status: 'added' as const } : r
-          );
-
-    setMovieRequests(updated);
-    saveLocalMovieRequests(updated);
-
-    await fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'UPDATE_MOVIE_REQUEST_STATUS',
-        requestId,
-        status,
-      }),
-    }).catch(() => {});
-  };
-
-  const handleAddFriendSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!friendUsernameInput.trim()) return;
-    setAddingFriend(true);
-    try {
-      const ok = await addFriend(friendUsernameInput);
-      if (ok) {
-        setFriendUsernameInput('');
-        await fetchDashboardState();
-      }
-    } finally {
-      setAddingFriend(false);
     }
   };
 
@@ -476,57 +277,6 @@ export default function DashboardPage() {
     }
   };
 
-  const handleInviteFriendToRoom = async (friend: UserProfile) => {
-    const activeRoom = rooms[0];
-    if (!activeRoom) {
-      addToast({
-        title: 'Start a room first!',
-        description: 'Click "Watch with Friends" on any movie below to create a room.',
-        variant: 'warning',
-      });
-      return;
-    }
-
-    const newInv: RoomInvitation = {
-      id: `inv-${Date.now()}`,
-      roomId: activeRoom.id,
-      roomCode: activeRoom.code,
-      roomTitle: activeRoom.title,
-      platform: activeRoom.platform,
-      senderId: user?.id || 'host',
-      senderName: user?.displayName || 'Host',
-      senderAvatar: user?.avatarUrl || '',
-      recipientId: friend.id,
-      recipientEmail: friend.username,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
-
-    setInvitations((prev) => [newInv, ...prev]);
-    await fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'CREATE_INVITATION',
-        invitation: newInv,
-      }),
-    }).catch(() => {});
-
-    addToast({
-      title: `Invited ${friend.displayName}!`,
-      description: `Sent invite for room ${activeRoom.code}.`,
-      variant: 'success',
-    });
-  };
-
-  // Compute user's connected friends vs other registered users on the site
-  const myFriendIds = new Set(user?.friendIds || []);
-  const myFriends = registeredUsers.filter(
-    (u) => u.id !== user?.id && myFriendIds.has(u.id)
-  );
-  const discoverUsers = registeredUsers.filter(
-    (u) => u.id !== user?.id && !myFriendIds.has(u.id)
-  );
   const pendingInvitations = invitations.filter((i) => i.status === 'pending');
 
   return (
@@ -534,7 +284,7 @@ export default function DashboardPage() {
       <CinemaSpotlight withAscii={true} />
       <Navbar
         onQuickCreateRoom={() => {
-          setCreatePreset({ platform: 'youtube' });
+          setCreatePreset({ platform: 'netflix' });
           setCreateModalOpen(true);
         }}
       />
@@ -623,7 +373,7 @@ export default function DashboardPage() {
               <GlowButton
                 variant="primary"
                 onClick={() => {
-                  setCreatePreset({ platform: 'youtube' });
+                  setCreatePreset({ platform: 'netflix' });
                   setCreateModalOpen(true);
                 }}
                 className="w-full sm:w-auto"
@@ -647,7 +397,7 @@ export default function DashboardPage() {
                 type="text"
                 value={joinCodeInput}
                 onChange={(e) => setJoinCodeInput(e.target.value)}
-                placeholder="Enter Room Code (e.g. K7M-9P2)"
+                placeholder="Enter Room Code (e.g. NFX-808)"
                 className="flex-1 min-w-0 bg-transparent px-3.5 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none"
               />
               <GlowButton type="submit" className="py-1.5 px-4 text-xs shrink-0">
@@ -709,16 +459,7 @@ export default function DashboardPage() {
                   <label className="block text-xs text-slate-300 mb-1">
                     Platform
                   </label>
-                  <select
-                    value={newMoviePlatform}
-                    onChange={(e) =>
-                      setNewMoviePlatform(e.target.value as PlatformType)
-                    }
-                    className="w-full rounded-full bg-[#0D0F18] border border-white/15 px-3.5 py-2.5 text-xs text-white focus:border-vybe-accent focus:outline-none"
-                  >
-                    <option value="youtube">YouTube Movie / Video</option>
-                    <option value="netflix">Netflix / Custom File</option>
-                  </select>
+                  <div className="w-full rounded-full bg-[#0D0F18] border border-white/15 px-3.5 py-2.5 text-xs text-white">Netflix</div>
                 </div>
 
                 <div>
@@ -749,33 +490,14 @@ export default function DashboardPage() {
 
                 <div>
                   <label className="block text-xs text-slate-300 mb-1">
-                    {newMoviePlatform === 'youtube'
-                      ? 'YouTube Link or ID'
-                      : 'Netflix Link or Watch ID'}
+                    Netflix Link or Watch ID
                   </label>
                   <input
                     type="text"
                     required
                     value={newMovieUrl}
                     onChange={(e) => setNewMovieUrl(e.target.value)}
-                    placeholder={
-                      newMoviePlatform === 'youtube'
-                        ? 'https://youtube.com/watch?v=...'
-                        : 'https://netflix.com/watch/81435684'
-                    }
-                    className="w-full rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">
-                    Direct .MP4 / .M3U8 Link (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={newMovieDirectStreamUrl}
-                    onChange={(e) => setNewMovieDirectStreamUrl(e.target.value)}
-                    placeholder="https://.../video.mp4"
+                    placeholder="https://netflix.com/watch/81435684"
                     className="w-full rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
                   />
                 </div>
@@ -788,6 +510,16 @@ export default function DashboardPage() {
                 </GlowButton>
               </div>
             </motion.form>
+          )}
+
+          {/* Movies Empty State */}
+          {siteMovies.length === 0 && !showAddMovieForm && (
+            <div className="rounded-3xl bg-[#07080D]/50 border border-white/[0.06] p-6 text-center space-y-2">
+              <div className="text-sm font-bold text-white">No movies added yet</div>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Enter a netflix.com/watch/… link or a numeric Watch ID in the form above — each title is added when someone hosts a party with it.
+              </p>
+            </div>
           )}
 
           {/* Movie Grid */}
@@ -811,18 +543,8 @@ export default function DashboardPage() {
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0D0F18] via-[#0D0F18]/25 to-transparent" />
 
                     <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1.5">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border backdrop-blur-md ${
-                          movie.platform === 'youtube'
-                            ? 'bg-rose-500/25 border-rose-500/40 text-rose-200'
-                            : 'bg-[#E50914]/30 border-[#E50914]/50 text-rose-200'
-                        }`}
-                      >
-                        {movie.platform === 'youtube' ? (
-                          <Youtube className="h-3 w-3" />
-                        ) : (
-                          <Tv className="h-3 w-3" />
-                        )}
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border backdrop-blur-md bg-[#E50914]/30 border-[#E50914]/50 text-rose-200">
+                        <Tv className="h-3 w-3" />
                         <span>{movie.platform}</span>
                       </span>
 
@@ -866,434 +588,12 @@ export default function DashboardPage() {
         </section>
 
         {/* ================================================================== */}
-        {/* 3. ACTIVE WATCH PARTY ROOMS + ADD & MANAGE FRIENDS                 */}
+          {/* 3. ROOM INVITATIONS                                                */}
         {/* ================================================================== */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Active Rooms (7 cols) */}
-          <div className="lg:col-span-7 space-y-4 min-w-0">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                <Radio className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span>Active Watch Parties ({rooms.length})</span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Live rooms created by you and your friends
-              </p>
-            </div>
-
-            {rooms.length === 0 ? (
-              <div className="rounded-3xl vybe-glass p-8 text-center space-y-3">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full vybe-glass-pill text-vybe-accentLight">
-                  <Tv className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-bold text-white">
-                  No Active Watch Parties Right Now
-                </h3>
-                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                  Click <strong>&ldquo;Watch with Friends&rdquo;</strong> on any episode above to spin up a room and share the room code with your friends!
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {rooms.map((room) => {
-                  const activeMembers = room.participants.filter(
-                    (p) => p.status === 'joined'
-                  );
-                  return (
-                    <motion.div
-                      key={room.id}
-                      whileHover={{ y: -3 }}
-                      className="group relative min-w-0 flex flex-col justify-between overflow-hidden rounded-3xl vybe-glass hover:border-vybe-accent/60 transition-all"
-                    >
-                      <div className="relative h-36 w-full bg-[#07080D] overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={
-                            room.playback.videoThumbnail ||
-                            `https://i.ytimg.com/vi/${room.playback.videoId}/hqdefault.jpg`
-                          }
-                          alt={room.playback.videoTitle}
-                          className="h-full w-full object-cover opacity-80"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#0D0F18] via-[#0D0F18]/30 to-transparent" />
-
-                        <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase border backdrop-blur-md ${
-                              room.platform === 'youtube'
-                                ? 'bg-rose-500/25 border-rose-500/40 text-rose-200'
-                                : 'bg-[#E50914]/30 border-[#E50914]/50 text-rose-200'
-                            }`}
-                          >
-                            <span>{room.platform}</span>
-                          </span>
-
-                          <span className="inline-flex items-center gap-1 rounded-full vybe-glass-pill px-2.5 py-0.5 text-[10px] font-medium text-slate-200">
-                            {room.privacy === 'private' ? (
-                              <Lock className="h-2.5 w-2.5 text-amber-400" />
-                            ) : (
-                              <Globe className="h-2.5 w-2.5 text-emerald-400" />
-                            )}
-                            <span>{room.code}</span>
-                          </span>
-                        </div>
-
-                        <div className="absolute bottom-2.5 left-4 right-4">
-                          <span className="text-xs font-semibold text-white truncate block">
-                            {room.playback.videoTitle}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                        <div>
-                          <h3 className="text-sm font-bold text-white truncate">
-                            {room.title}
-                          </h3>
-                          <p className="text-[11px] text-slate-400">
-                            Hosted by {room.hostName}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-white/[0.08]">
-                          <div className="flex items-center gap-2">
-                            <AnimatedAvatarStack
-                              maxVisible={3}
-                              items={activeMembers.map((m) => ({
-                                id: m.userId,
-                                name: `${m.displayName} (${m.role})`,
-                                subtitle: 'In Room',
-                                image: m.avatarUrl,
-                                statusColor: '#10B981',
-                              }))}
-                            />
-                            <span className="text-[11px] text-slate-400">
-                              {activeMembers.length} watching
-                            </span>
-                          </div>
-
-                          <Link
-                            href={`/room?code=${encodeURIComponent(room.code)}`}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-4 py-1.5 text-xs font-bold text-white transition"
-                          >
-                            <Play className="h-3 w-3 fill-current" />
-                            <span>Join</span>
-                          </Link>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* ============================================================== */}
-            {/* MOVIE & SERIES REQUEST BOARD (REQUEST NOW, ADD LATER)          */}
-            {/* ============================================================== */}
-            <div className="rounded-3xl vybe-glass p-5 sm:p-6 space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                    <MessageSquarePlus className="h-4 w-4 text-vybe-accentLight shrink-0" />
-                    <span>Movie & Series Requests ({movieRequests.length})</span>
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Friends can request movies or shows here so you can add them to the library later
-                  </p>
-                </div>
-              </div>
-
-              {/* Request Form */}
-              <form
-                onSubmit={handleCreateMovieRequest}
-                className="grid grid-cols-1 sm:grid-cols-12 gap-2.5"
-              >
-                <input
-                  type="text"
-                  required
-                  value={reqTitle}
-                  onChange={(e) => setReqTitle(e.target.value)}
-                  placeholder="Movie or show title (e.g. Arcane Season 2, Interstellar)"
-                  className="sm:col-span-5 rounded-full bg-white/[0.04] border border-white/15 px-4 py-2 text-xs text-white placeholder-slate-400 focus:border-vybe-accent focus:outline-none min-w-0"
-                />
-
-                <select
-                  value={reqPlatform}
-                  onChange={(e) => setReqPlatform(e.target.value as PlatformType)}
-                  className="sm:col-span-2 rounded-full bg-[#0D0F18] border border-white/15 px-3 py-2 text-xs text-white focus:border-vybe-accent focus:outline-none"
-                >
-                  <option value="netflix">Netflix</option>
-                  <option value="youtube">YouTube</option>
-                </select>
-
-                <input
-                  type="text"
-                  value={reqNote}
-                  onChange={(e) => setReqNote(e.target.value)}
-                  placeholder="Note or link (optional)"
-                  className="sm:col-span-3 rounded-full bg-white/[0.04] border border-white/15 px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:border-vybe-accent focus:outline-none min-w-0"
-                />
-
-                <GlowButton
-                  type="submit"
-                  disabled={submittingRequest || !reqTitle.trim()}
-                  className="sm:col-span-2 py-2 px-3 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0" />
-                  <span>Request</span>
-                </GlowButton>
-              </form>
-
-              {/* Requests List */}
-              {movieRequests.length === 0 ? (
-                <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 text-center text-xs text-slate-400">
-                  No movie requests yet. Submit a title above to start the wishlist!
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {movieRequests.map((req) => {
-                    const hasVoted = req.upvoterIds.includes(user?.id || 'guest');
-                    return (
-                      <div
-                        key={req.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-white/[0.03] border border-white/10 p-3.5"
-                      >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                req.platform === 'youtube'
-                                  ? 'bg-rose-500/20 text-rose-300'
-                                  : 'bg-[#E50914]/25 text-rose-200'
-                              }`}
-                            >
-                              {req.platform}
-                            </span>
-
-                            <span className="text-xs sm:text-sm font-bold text-white truncate">
-                              {req.title}
-                            </span>
-
-                            {req.status === 'added' && (
-                              <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                                Added to Library ✓
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="text-[11px] text-slate-400">
-                            Requested by{' '}
-                            <span className="text-slate-200 font-medium">
-                              {req.requestedByName} (@{req.requestedByUsername})
-                            </span>
-                            {req.note ? ` • "${req.note}"` : ''}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleVoteMovieRequest(req.id)}
-                            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold border transition ${
-                              hasVoted
-                                ? 'bg-vybe-accent/25 border-vybe-accent text-white'
-                                : 'vybe-glass-pill text-slate-300 hover:text-white'
-                            }`}
-                          >
-                            <ThumbsUp className="h-3 w-3" />
-                            <span>{req.upvoterIds.length}</span>
-                          </button>
-
-                          {req.status === 'pending' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewMovieTitle(req.title);
-                                setNewMoviePlatform(req.platform);
-                                setFulfillingRequestId(req.id);
-                                setShowAddMovieForm(true);
-                                window.scrollTo({ top: 180, behavior: 'smooth' });
-                              }}
-                              className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-300 transition"
-                              title="Pre-fill Add Movie form to add this requested title now"
-                            >
-                              <Plus className="h-3 w-3" />
-                              <span>Add to Site</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateRequestStatus(req.id, 'delete')}
-                            className="rounded-full p-1.5 text-slate-400 hover:text-rose-400 transition"
-                            title="Remove request"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="grid grid-cols-1 gap-6">
 
           {/* Friends & Invitations Column (5 cols) */}
-          <div className="lg:col-span-5 space-y-6 min-w-0">
-            {/* Add & Manage Friends Card */}
-            <div className="rounded-3xl vybe-glass p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    <Users className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <span>Friends ({myFriends.length})</span>
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Add friends by their @username to watch together
-                  </p>
-                </div>
-              </div>
-
-              {/* Add Friend by @username Form */}
-              <form
-                onSubmit={handleAddFriendSubmit}
-                className="flex items-center gap-2 rounded-full vybe-glass-pill p-1.5"
-              >
-                <AtSign className="h-3.5 w-3.5 text-vybe-accentLight ml-2.5 shrink-0" />
-                <input
-                  type="text"
-                  value={friendUsernameInput}
-                  onChange={(e) => setFriendUsernameInput(e.target.value)}
-                  placeholder="Enter friend's @username"
-                  className="flex-1 min-w-0 bg-transparent px-1.5 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none"
-                />
-                <GlowButton
-                  type="submit"
-                  disabled={addingFriend || !friendUsernameInput.trim()}
-                  className="py-1.5 px-4 text-xs shrink-0"
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  <span>Add</span>
-                </GlowButton>
-              </form>
-
-              {/* My Added Friends List */}
-              {myFriends.length === 0 ? (
-                <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 text-center text-xs text-slate-400 leading-relaxed">
-                  You haven&apos;t added any friends yet. Ask your friends to create an account on{' '}
-                  <strong className="text-white">vybe.nooryoosuf.com</strong> and enter their{' '}
-                  <strong className="text-vybe-accentLight">@username</strong> above!
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {myFriends.map((friend) => (
-                    <div
-                      key={friend.id}
-                      className="flex items-center justify-between gap-2 rounded-full vybe-glass-pill pl-2.5 pr-3 py-2"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={friend.avatarUrl}
-                          alt={friend.displayName}
-                          className="h-8 w-8 rounded-full object-cover shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">
-                            {friend.displayName}{' '}
-                            <span className="font-normal text-slate-400">
-                              @{friend.username}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate">
-                            {friend.currentRoomCode
-                              ? `Watching in Room ${friend.currentRoomCode}`
-                              : 'Online'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {friend.currentRoomCode ? (
-                          <Link
-                            href={`/room?code=${encodeURIComponent(
-                              friend.currentRoomCode
-                            )}`}
-                            className="rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-3 py-1 text-[11px] font-bold text-white transition"
-                          >
-                            Join
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleInviteFriendToRoom(friend)}
-                            className="rounded-full bg-white/10 hover:bg-vybe-accent/30 px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition"
-                          >
-                            Invite
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeFriend(friend.id)}
-                          className="rounded-full p-1 text-slate-400 hover:text-rose-400 transition"
-                          title="Remove friend"
-                        >
-                          <UserMinus className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* People Signed Up on This VYBE Server (Quick 1-Click Add) */}
-              {discoverUsers.length > 0 && (
-                <div className="pt-3 border-t border-white/10 space-y-2">
-                  <div className="text-xs font-semibold text-slate-300">
-                    People on VYBE (Quick Add)
-                  </div>
-                  <div className="space-y-1.5">
-                    {discoverUsers.slice(0, 6).map((person) => (
-                      <div
-                        key={person.id}
-                        className="flex items-center justify-between gap-2 rounded-full bg-white/[0.03] border border-white/10 pl-2.5 pr-3 py-1.5"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={person.avatarUrl}
-                            alt={person.displayName}
-                            className="h-7 w-7 rounded-full object-cover shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">
-                              {person.displayName}
-                            </div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              @{person.username}
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await addFriend(person.username);
-                            await fetchDashboardState();
-                          }}
-                          className="inline-flex items-center gap-1 rounded-full bg-vybe-accent/25 hover:bg-vybe-accent border border-vybe-accent/50 px-3 py-1 text-[11px] font-bold text-white transition shrink-0"
-                        >
-                          <UserPlus className="h-3 w-3" />
-                          <span>Add</span>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
+          <div className="space-y-6 min-w-0">
             {/* Room Invitations (Only Shown When You Have Real Invitations) */}
             {pendingInvitations.length > 0 && (
               <div className="rounded-3xl vybe-glass p-5 space-y-3">
@@ -1351,9 +651,8 @@ export default function DashboardPage() {
       <CreateRoomModal
         isOpen={isCreateModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        initialPlatform={createPreset.platform}
-        initialVideoId={createPreset.videoId}
-        initialVideoTitle={createPreset.videoTitle}
+        initialNetflixWatchId={createPreset.videoId}
+        initialNetflixTitle={createPreset.videoTitle}
       />
     </div>
   );

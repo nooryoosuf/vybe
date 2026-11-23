@@ -1,20 +1,24 @@
 // ============================================================================
-// VYBE Manifest V3 Service Worker (background.js)
+// VYBE Manifest V3 Service Worker (background.js) — Netflix-Only
+//
 // Coordinates playback synchronization between Netflix tabs and VYBE Rooms.
-// Hardened against MV3 service-worker suspensions and excessive tab messaging.
+// Hardened against MV3 service-worker suspensions: session state is
+// persisted to chrome.storage.local and re-requested from Netflix tabs
+// after a restart.
 // ============================================================================
 
 const DEFAULT_SESSION_STATE = {
-  vybeBaseUrl: 'https://vybe.nooryoosuf.com',
-  roomCode: 'VYB-4K1',
+  vybeBaseUrl: 'http://localhost:3100',
+  roomCode: 'NFX-808',
   connected: true,
   lastWatchId: null,
   isPlaying: false,
   currentTime: 0,
+  isBuffering: false,
   pageType: 'idle',
 };
 
-// Target URL match patterns for broadcast to prevent messaging unrelated tabs
+// Target URL match patterns — never message unrelated websites.
 const TARGET_URL_PATTERNS = [
   '*://*.netflix.com/*',
   'https://vybe.nooryoosuf.com/*',
@@ -23,6 +27,8 @@ const TARGET_URL_PATTERNS = [
   'https://*.pages.dev/*',
   'https://*.workers.dev/*',
 ];
+
+const NETFLIX_TAB_PATTERNS = ['*://*.netflix.com/*'];
 
 /**
  * Get session state from chrome.storage.local, initializing with defaults if missing.
@@ -51,14 +57,51 @@ async function saveSessionState(state) {
   });
 }
 
+/**
+ * Hydrate session state from storage when the worker (re)starts.
+ */
+async function hydrateSessionStateFromStorage() {
+  const saved = await new Promise((resolve) => {
+    chrome.storage.local.get(['vybeSession'], (result) => {
+      resolve(result && result.vybeSession);
+    });
+  });
+  if (saved) {
+    await saveSessionState({ ...DEFAULT_SESSION_STATE, ...saved });
+  }
+}
+
+/**
+ * Ask Netflix tabs to push their current state to us (worker-restart recovery).
+ */
+function reRequestStateFromNetflixTabs() {
+  chrome.tabs.query({ url: NETFLIX_TAB_PATTERNS }, (tabs) => {
+    if (!tabs) return;
+    for (const tab of tabs) {
+      if (!tab.id) continue;
+      try {
+        chrome.tabs.sendMessage(tab.id, { type: 'GET_EXTENSION_STATE' });
+      } catch {
+        // Ignore frames where the content script is not injected
+      }
+    }
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   await saveSessionState(DEFAULT_SESSION_STATE);
+  reRequestStateFromNetflixTabs();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  // Worker was suspended or the browser restarted — restore session + re-sync.
+  await hydrateSessionStateFromStorage();
+  reRequestStateFromNetflixTabs();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return false;
 
-  // Handle async operations cleanly in MV3
   (async () => {
     const sessionState = await getSessionState();
 
@@ -68,7 +111,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'SET_ROOM_CONFIG') {
-      sessionState.roomCode = (message.roomCode || 'VYB-4K1').toUpperCase();
+      sessionState.roomCode = (message.roomCode || 'NFX-808').toUpperCase();
       if (message.vybeBaseUrl) {
         sessionState.vybeBaseUrl = message.vybeBaseUrl;
       }
@@ -90,6 +133,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sessionState.pageType = message.pageType || 'watch';
       sessionState.lastWatchId = message.watchId || sessionState.lastWatchId;
       sessionState.isPlaying = Boolean(message.isPlaying);
+      sessionState.isBuffering = Boolean(message.isBuffering);
       sessionState.currentTime = Number(message.currentTime || 0);
       await saveSessionState(sessionState);
 
@@ -101,6 +145,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         pageType: sessionState.pageType,
         watchId: sessionState.lastWatchId,
         isPlaying: sessionState.isPlaying,
+        isBuffering: sessionState.isBuffering,
         currentTime: sessionState.currentTime,
       });
 
@@ -124,7 +169,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentTime: sessionState.currentTime,
       });
 
-      // Also publish directly to VYBE Server Realtime API
+      // Also publish directly to the VYBE Server Realtime API
       fetch(`${sessionState.vybeBaseUrl}/api/realtime/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

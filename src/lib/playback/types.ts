@@ -3,7 +3,7 @@
  * Core Type Definitions, Capability Flags, and Provider Interfaces
  */
 
-export type PlaybackProviderType = 'youtube' | 'netflix' | 'local_media';
+export type PlaybackProviderType = 'netflix';
 
 export type CommandOrigin = 'user' | 'remote' | 'system';
 

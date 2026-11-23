@@ -1,27 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Plus,
-  ThumbsUp,
-  ThumbsDown,
-  ChevronUp,
-  ChevronDown,
-  Trash2,
-  Play,
-  Youtube,
-  Tv,
-  ListVideo,
-  Sparkles,
-} from 'lucide-react';
-import { PlatformType, QueueItem } from '@/types/vybe';
-import { CURATED_YOUTUBE_VIDEOS, SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
-import {
-  extractNetflixWatchId,
-  extractYouTubeId,
-  fetchYouTubeMetadata,
-  resolveNetflixMetadata,
-} from '@/lib/utils';
+import { Plus, ThumbsUp, ThumbsDown, ChevronUp, ChevronDown, Trash2, Play, Tv, ListVideo, Sparkles } from 'lucide-react';
+import { QueueItem } from '@/types/vybe';
+import { SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
+import { extractNetflixWatchId, resolveNetflixMetadata } from '@/lib/utils';
 import { GlowButton } from '@/components/ui/AceternityPrimitives';
 
 interface WatchQueuePanelProps {
@@ -35,12 +18,7 @@ interface WatchQueuePanelProps {
   onMoveQueueItem: (itemId: string, dir: -1 | 1) => void;
   onRemoveQueueItem: (itemId: string) => void;
   onPlayQueueItemNow: (itemId: string) => void;
-  onDirectSwitchMedia: (
-    platform: PlatformType,
-    videoId: string,
-    title: string,
-    thumbnailUrl: string
-  ) => void;
+  onDirectSwitchMedia: (videoId: string, title: string, thumbnailUrl: string) => void;
 }
 
 export function WatchQueuePanel({
@@ -56,8 +34,6 @@ export function WatchQueuePanel({
   onPlayQueueItemNow,
   onDirectSwitchMedia,
 }: WatchQueuePanelProps) {
-  const [addPlatform, setAddPlatform] = useState<PlatformType>('youtube');
-  const [inputUrl, setInputUrl] = useState('');
   const [selectedNetflixId, setSelectedNetflixId] = useState(
     SUPPORTED_NETFLIX_TITLES[0].watchId
   );
@@ -70,68 +46,35 @@ export function WatchQueuePanel({
     setSubmitting(true);
 
     try {
-      if (addPlatform === 'youtube') {
-        const ytId = extractYouTubeId(inputUrl);
-        if (!ytId) {
-          throw new Error('Paste a valid YouTube URL or 11-character video ID.');
-        }
-        const meta = await fetchYouTubeMetadata(ytId);
-
-        if (playImmediately && canControlPlayback) {
-          onDirectSwitchMedia('youtube', ytId, meta.title, meta.thumbnailUrl);
-          setInputUrl('');
-          return;
-        }
-
-        const newItem: QueueItem = {
-          id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          roomId,
-          platform: 'youtube',
-          videoId: ytId,
-          title: meta.title,
-          thumbnailUrl: meta.thumbnailUrl,
-          durationLabel: 'HD Sync',
-          addedById: currentUserId,
-          addedByName: currentUserName,
-          position: queue.length,
-          score: 1,
-          upvoterIds: [currentUserId],
-          downvoterIds: [],
-          createdAt: new Date().toISOString(),
-        };
-        onAddQueueItem(newItem);
-        setInputUrl('');
-      } else {
-        const nfId = extractNetflixWatchId(selectedNetflixId);
-        if (!nfId) {
-          throw new Error('Select a supported Netflix title.');
-        }
-        const nfMeta = resolveNetflixMetadata(nfId);
-
-        if (playImmediately && canControlPlayback) {
-          onDirectSwitchMedia('netflix', nfId, nfMeta.title, nfMeta.posterUrl);
-          return;
-        }
-
-        const newItem: QueueItem = {
-          id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          roomId,
-          platform: 'netflix',
-          videoId: nfId,
-          title: nfMeta.title,
-          thumbnailUrl: nfMeta.posterUrl,
-          durationLabel: nfMeta.durationLabel,
-          netflixSynopsis: nfMeta.synopsis,
-          addedById: currentUserId,
-          addedByName: currentUserName,
-          position: queue.length,
-          score: 1,
-          upvoterIds: [currentUserId],
-          downvoterIds: [],
-          createdAt: new Date().toISOString(),
-        };
-        onAddQueueItem(newItem);
+      const nfId = extractNetflixWatchId(selectedNetflixId);
+      if (!nfId) {
+        throw new Error('Select a supported Netflix title.');
       }
+      const nfMeta = resolveNetflixMetadata(nfId);
+
+      if (playImmediately && canControlPlayback) {
+        onDirectSwitchMedia(nfId, nfMeta.title, nfMeta.posterUrl);
+        return;
+      }
+
+      const newItem: QueueItem = {
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        roomId,
+        platform: 'netflix',
+        videoId: nfId,
+        title: nfMeta.title,
+        thumbnailUrl: nfMeta.posterUrl,
+        durationLabel: nfMeta.durationLabel,
+        netflixSynopsis: nfMeta.synopsis,
+        addedById: currentUserId,
+        addedByName: currentUserName,
+        position: queue.length,
+        score: 1,
+        upvoterIds: [currentUserId],
+        downvoterIds: [],
+        createdAt: new Date().toISOString(),
+      };
+      onAddQueueItem(newItem);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Could not add item');
     } finally {
@@ -149,38 +92,9 @@ export function WatchQueuePanel({
             <span>Add to Shared Watch Queue</span>
           </span>
 
-          <div className="flex items-center gap-1 rounded-lg bg-[#07080D] p-0.5 border border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                setAddPlatform('youtube');
-                setErrorMsg(null);
-              }}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition ${
-                addPlatform === 'youtube'
-                  ? 'bg-rose-500/20 text-rose-300'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Youtube className="h-3 w-3" />
-              <span>YouTube</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAddPlatform('netflix');
-                setErrorMsg(null);
-              }}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold transition ${
-                addPlatform === 'netflix'
-                  ? 'bg-[#E50914]/25 text-rose-200'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Tv className="h-3 w-3" />
-              <span>Netflix</span>
-            </button>
-          </div>
+          <span className="rounded-full bg-[#E50914]/20 border border-[#E50914]/30 px-2.5 py-0.5 text-[10px] font-bold text-rose-200">
+            <Tv className="inline h-3 w-3" /> Netflix
+          </span>
         </div>
 
         {errorMsg && (
@@ -190,47 +104,22 @@ export function WatchQueuePanel({
         )}
 
         <form onSubmit={(e) => handleAdd(e, false)} className="space-y-2">
-          {addPlatform === 'youtube' ? (
-            <>
-              <input
-                type="text"
-                value={inputUrl}
-                onChange={(e) => setInputUrl(e.target.value)}
-                placeholder="Paste YouTube URL or 11-char ID..."
-                className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-vybe-accent focus:outline-none"
-              />
-              {/* Quick Preset Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-                {CURATED_YOUTUBE_VIDEOS.map((v) => (
-                  <button
-                    key={v.videoId}
-                    type="button"
-                    onClick={() => setInputUrl(v.videoId)}
-                    className="shrink-0 rounded-md bg-[#131624] hover:bg-vybe-accent/25 border border-white/10 px-2 py-1 text-[10px] text-slate-300 hover:text-white transition"
-                  >
-                    + {v.title.split('—')[0].trim()}
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="space-y-1.5">
-              <select
-                value={selectedNetflixId}
-                onChange={(e) => setSelectedNetflixId(e.target.value)}
-                className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3 py-2 text-xs text-white focus:border-vybe-accent focus:outline-none"
-              >
-                {SUPPORTED_NETFLIX_TITLES.map((nf) => (
-                  <option key={nf.watchId} value={nf.watchId}>
-                    {nf.title} (#{nf.watchId})
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-slate-400 leading-snug">
-                Netflix titles play through each viewer&apos;s authenticated Netflix session via the VYBE Chrome Extension.
-              </p>
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <select
+              value={selectedNetflixId}
+              onChange={(e) => setSelectedNetflixId(e.target.value)}
+              className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3 py-2 text-xs text-white focus:border-vybe-accent focus:outline-none"
+            >
+              {SUPPORTED_NETFLIX_TITLES.map((nf) => (
+                <option key={nf.watchId} value={nf.watchId}>
+                  {nf.title} (#{nf.watchId})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 leading-snug">
+              Each viewer watches via their own Netflix account on netflix.com.
+            </p>
+          </div>
 
           <div className="flex items-center gap-2">
             <GlowButton
@@ -267,7 +156,7 @@ export function WatchQueuePanel({
               Queue is currently empty
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Add YouTube videos or supported Netflix titles above and vote on what plays next.
+              Add supported Netflix titles above and vote on what plays next.
             </p>
           </div>
         ) : (
@@ -295,14 +184,8 @@ export function WatchQueuePanel({
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span
-                        className={`rounded px-1.5 py-0.2 text-[9px] font-bold uppercase ${
-                          item.platform === 'youtube'
-                            ? 'bg-rose-500/20 text-rose-300'
-                            : 'bg-[#E50914]/25 text-rose-200'
-                        }`}
-                      >
-                        {item.platform}
+                      <span className="rounded px-1.5 py-0.2 text-[9px] font-bold uppercase bg-[#E50914]/25 text-rose-200">
+                        netflix
                       </span>
                       <span className="text-[10px] font-mono text-slate-400">
                         {item.durationLabel}
@@ -380,7 +263,7 @@ export function WatchQueuePanel({
                           type="button"
                           onClick={() => onPlayQueueItemNow(item.id)}
                           className="inline-flex items-center gap-1 rounded-lg bg-vybe-accent/20 hover:bg-vybe-accent border border-vybe-accent/40 px-2 py-1 text-[10px] font-bold text-white transition"
-                          title="Play this item immediately"
+                          title="Play this title immediately"
                         >
                           <Play className="h-2.5 w-2.5 fill-current" />
                           <span>Play</span>

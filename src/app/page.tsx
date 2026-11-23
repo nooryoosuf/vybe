@@ -9,7 +9,6 @@ import {
   Users,
   Radio,
   Shield,
-  Youtube,
   Tv,
   MessageSquare,
   ListVideo,
@@ -54,7 +53,7 @@ export default function LandingPage() {
     e.preventDefault();
     const cleaned = joinCode.trim().toUpperCase();
     if (!cleaned) {
-      router.push('/room?code=VYB-4K1');
+      router.push('/room?code=NFX-808');
       return;
     }
     router.push(`/room?code=${encodeURIComponent(cleaned)}`);
@@ -106,7 +105,7 @@ export default function LandingPage() {
           >
             <span className="inline-flex items-center gap-2 rounded-full vybe-glass-pill px-4 py-1.5 text-xs font-medium text-slate-200">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Synchronized YouTube & Netflix Watch Parties</span>
+              <span>Synchronized Netflix Watch Parties</span>
             </span>
           </motion.div>
 
@@ -128,7 +127,9 @@ export default function LandingPage() {
             transition={{ duration: 0.5, delay: 0.16 }}
             className="mt-5 text-sm sm:text-lg text-slate-300/90 leading-relaxed max-w-2xl mx-auto px-2"
           >
-            Late-night cinema with friends from anywhere. Stream YouTube videos and Netflix titles in real time with floating scene reactions, voice chat, live messages, and shared watch queues.
+            Late-night cinema with friends from anywhere. Every viewer plays the same Netflix
+            title through their own account, with real-time floating scene reactions, voice chat,
+            live messages, and shared watch queues.
           </motion.p>
 
           {/* Primary & Secondary Pill CTAs */}
@@ -173,7 +174,7 @@ export default function LandingPage() {
                     type="text"
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                    placeholder="Enter Room Code (e.g. VYB-4K1)"
+                    placeholder="Enter Room Code (e.g. NFX-808)"
                     className="flex-1 min-w-0 bg-transparent px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:outline-none"
                   />
                   <GlowButton type="submit" className="py-2 px-4 text-xs shrink-0">
@@ -231,9 +232,9 @@ export default function LandingPage() {
           {[
             {
               step: 'Step 1',
-              title: 'Create a Room',
+              title: 'Host a Netflix Room',
               description:
-                'Paste any YouTube URL or pick a Netflix title. Customize room privacy, optional password, and playback control permissions.',
+                'Pick a Netflix title, set room privacy, and customize playback control permissions.',
               icon: Sparkles,
             },
             {
@@ -247,7 +248,7 @@ export default function LandingPage() {
               step: 'Step 3',
               title: 'Watch & React Together',
               description:
-                'Everyone stays automatically synced to the same timestamp while floating reactions and live chat bring the room alive.',
+                'Everyone opens the same Netflix title on their own account. The VYBE Chrome extension keeps play, pause, and seek in sync room-wide.',
               icon: Zap,
             },
           ].map((item, idx) => {
@@ -282,80 +283,23 @@ export default function LandingPage() {
       </section>
 
       {/* ==================================================================== */}
-      {/* 3. SUPPORTED PLATFORMS                                               */}
+      {/* 3. NETFLIX — THE ONLY STREAMING PROVIDER                             */}
       {/* ==================================================================== */}
       <section className="mx-auto max-w-7xl px-4 py-14 sm:py-16 sm:px-6 lg:px-8 border-t border-white/[0.06]">
         <div className="text-center max-w-2xl mx-auto">
           <span className="text-xs font-semibold uppercase tracking-wider text-vybe-accentLight">
-            Streaming Integrations
+            Netflix Sync
           </span>
           <h2 className="mt-2 font-display text-2xl sm:text-4xl font-bold text-white">
-            Supported Platforms
+            Synced Netflix Sessions
           </h2>
           <p className="mt-2.5 text-xs sm:text-sm text-slate-400">
-            Built for instant YouTube playback and Chrome Extension Netflix synchronization.
+            Every viewer plays through Netflix.com — their own account, their own tab. The VYBE
+            Chrome extension keeps play, pause, and seek in sync room-wide.
           </p>
         </div>
 
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
-          {/* YouTube Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="min-w-0 overflow-hidden rounded-3xl vybe-glass p-5 sm:p-7 flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/20 border border-rose-500/40 px-3.5 py-1 text-xs font-bold text-rose-200">
-                  <Youtube className="h-4 w-4 shrink-0" />
-                  <span>YouTube</span>
-                </div>
-                <span className="rounded-full vybe-glass-pill px-3 py-1 text-xs font-medium text-emerald-300">
-                  No Install Needed
-                </span>
-              </div>
-
-              <h3 className="mt-4 sm:mt-5 text-xl sm:text-2xl font-bold text-white">
-                Instant Browser Screening
-              </h3>
-              <p className="mt-2 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-                Paste any YouTube video URL. VYBE synchronizes play, pause, seek, and buffering state, and automatically advances through your shared watch queue.
-              </p>
-
-              <ul className="mt-4 sm:mt-5 space-y-2.5 text-xs text-slate-300">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Real-time play, pause, and seek synchronization</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Switch videos seamlessly without leaving the room</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Automatic queue progression when a video finishes</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
-              <Link
-                href="/dashboard"
-                className="text-xs font-semibold text-vybe-accentLight hover:underline"
-              >
-                Browse Ready-to-Watch Movies →
-              </Link>
-              <GlowButton
-                variant="primary"
-                onClick={() => setCreateModalOpen(true)}
-                className="w-full sm:w-auto py-2 px-5 text-xs"
-              >
-                Host YouTube Room
-              </GlowButton>
-            </div>
-          </motion.div>
-
           {/* Netflix Card */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -370,29 +314,34 @@ export default function LandingPage() {
                   <span>Netflix</span>
                 </div>
                 <span className="rounded-full vybe-glass-pill px-3 py-1 text-xs font-medium text-slate-200">
-                  Tab Stream & Extension
+                  Extension Sync
                 </span>
               </div>
 
               <h3 className="mt-4 sm:mt-5 text-xl sm:text-2xl font-bold text-white">
-                Synced Netflix Sessions
+                Watch Together on Netflix.com
               </h3>
               <p className="mt-2 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-                Sign into Netflix and stream your tab directly into the VYBE room, or use the Chrome Extension to keep everyone’s playback aligned to the same second.
+                Each participant plays the same Netflix title through their own authenticated
+                account. The VYBE Chrome Extension detects play, pause, and seek on netflix.com
+                and broadcasts commands to the room so everyone watches the same second.
               </p>
 
               <ul className="mt-4 sm:mt-5 space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Works directly with your own Netflix account</span>
+                  <span>Play, pause, and seek synchronize across the room</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Stream your Netflix tab directly inside the VYBE room</span>
+                  <span>Every viewer streams through their own Netflix account</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>Or use the Teleparty-style Chrome Extension sidebar</span>
+                  <span>
+                    Protected content plays on the official Netflix site — we never embed or
+                    proxy protected streams
+                  </span>
                 </li>
               </ul>
             </div>
@@ -410,6 +359,66 @@ export default function LandingPage() {
                 className="w-full sm:w-auto py-2 px-5 text-xs"
               >
                 Open Movie Lobby
+              </GlowButton>
+            </div>
+          </motion.div>
+
+          {/* Netflix Room Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="min-w-0 overflow-hidden rounded-3xl vybe-glass p-5 sm:p-7 flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-[#E50914]/20 border border-[#E50914]/40 px-3.5 py-1 text-xs font-bold text-rose-200">
+                  <Tv className="h-4 w-4 shrink-0" />
+                  <span>Netflix Room</span>
+                </div>
+                <span className="rounded-full vybe-glass-pill px-3 py-1 text-xs font-medium text-slate-200">
+                  Protected Content
+                </span>
+              </div>
+
+              <h3 className="mt-4 sm:mt-5 text-xl sm:text-2xl font-bold text-white">
+                No Extensions Needed. No Bypasses.
+              </h3>
+              <p className="mt-2 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
+                Just open Netflix.com in your browser with the VYBE Chrome Extension paired. The
+                extension observes playback and keeps the room in sync — it never touches
+                Netflix&apos;s servers or DRM.
+              </p>
+
+              <ul className="mt-4 sm:mt-5 space-y-2.5 text-xs text-slate-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Playback detection with up to 2s heartbeat updates</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Play, pause, and seek authorization per room permissions</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Different-title detection — no cross-title sync</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-6 pt-5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+              <Link
+                href="/room/NFX-808"
+                className="text-xs font-semibold text-rose-400 hover:underline"
+              >
+                Join Featured Netflix Room →
+              </Link>
+              <GlowButton
+                variant="primary"
+                onClick={() => setCreateModalOpen(true)}
+                className="w-full sm:w-auto py-2 px-5 text-xs"
+              >
+                Host Netflix Room
               </GlowButton>
             </div>
           </motion.div>
@@ -444,7 +453,7 @@ export default function LandingPage() {
             {
               title: 'Playback Synchronization',
               description:
-                'Automatic drift detection and latency compensation keep everyone watching the exact same moment.',
+                'Monotonic sequence numbers, drift detection, and manual resync keep everyone watching the exact same moment.',
               icon: Radio,
               badge: 'Auto-Sync',
             },
@@ -458,7 +467,7 @@ export default function LandingPage() {
             {
               title: 'Shared Watch Queue',
               description:
-                'Add YouTube videos or Netflix titles, upvote favorites to play next, reorder items, and auto-play the queue.',
+                'Add Netflix titles, upvote favorites to play next, reorder items, and share the queue.',
               icon: ListVideo,
               badge: 'Upvoted',
             },
@@ -519,7 +528,8 @@ export default function LandingPage() {
                 Your Room, Your Rules
               </h3>
               <p className="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
-                Keep your watch party private with room codes, optional passwords, waiting room approval, and configurable playback permissions.
+                Keep your watch party private with room codes, optional passwords, waiting room
+                approval, and configurable playback permissions.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row w-full lg:w-auto items-stretch sm:items-center gap-3">
@@ -536,7 +546,7 @@ export default function LandingPage() {
                 className="w-full sm:w-auto"
               >
                 <Sparkles className="h-4 w-4 shrink-0" />
-                <span>Create Private Room</span>
+                <span>Create Private Netflix Room</span>
               </GlowButton>
             </div>
           </div>
@@ -572,12 +582,6 @@ export default function LandingPage() {
               className="rounded-full vybe-glass-pill px-3.5 py-1.5 hover:text-white transition"
             >
               Lobby
-            </Link>
-            <Link
-              href="/room/VYB-4K1"
-              className="rounded-full vybe-glass-pill px-3.5 py-1.5 hover:text-white transition"
-            >
-              YouTube Room
             </Link>
             <Link
               href="/room/NFX-808"

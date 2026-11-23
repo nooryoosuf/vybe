@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getVybeServerStore } from '@/lib/server/vybeStore';
 import {
-  MovieRequestItem,
   RoomInvitation,
   SavedWatchlist,
   SiteMovieItem,
   UserProfile,
 } from '@/types/vybe';
-import { INITIAL_SITE_MOVIES } from '@/lib/constants';
 
 export async function GET(req: NextRequest) {
   const store = getVybeServerStore();
@@ -35,8 +33,7 @@ export async function GET(req: NextRequest) {
     users,
     watchlists: userWatchlists,
     invitations,
-    siteMovies: db.siteMovies?.length ? db.siteMovies : INITIAL_SITE_MOVIES,
-    movieRequests: db.movieRequests || [],
+    siteMovies: db.siteMovies?.length ? db.siteMovies : [],
   });
 }
 
@@ -153,59 +150,11 @@ export async function POST(req: NextRequest) {
       }
       store.mutate((state) => {
         if (!Array.isArray(state.siteMovies)) {
-          state.siteMovies = [...INITIAL_SITE_MOVIES];
+          state.siteMovies = [];
         }
         state.siteMovies.unshift(movie);
       });
       return NextResponse.json({ siteMovies: store.getDb().siteMovies });
-    }
-
-    if (body.action === 'CREATE_MOVIE_REQUEST') {
-      const requestItem = body.requestItem as MovieRequestItem;
-      if (!requestItem || !requestItem.title) {
-        return NextResponse.json({ error: 'Title is required' }, { status: 400 });
-      }
-      store.mutate((state) => {
-        if (!Array.isArray(state.movieRequests)) {
-          state.movieRequests = [];
-        }
-        state.movieRequests.unshift(requestItem);
-      });
-      return NextResponse.json({ movieRequests: store.getDb().movieRequests });
-    }
-
-    if (body.action === 'VOTE_MOVIE_REQUEST') {
-      const { requestId, userId } = body as { requestId: string; userId: string };
-      store.mutate((state) => {
-        const list = state.movieRequests || [];
-        const item = list.find((r) => r.id === requestId);
-        if (item) {
-          if (item.upvoterIds.includes(userId)) {
-            item.upvoterIds = item.upvoterIds.filter((id) => id !== userId);
-          } else {
-            item.upvoterIds.push(userId);
-          }
-          list.sort((a, b) => b.upvoterIds.length - a.upvoterIds.length);
-        }
-      });
-      return NextResponse.json({ movieRequests: store.getDb().movieRequests });
-    }
-
-    if (body.action === 'UPDATE_MOVIE_REQUEST_STATUS') {
-      const { requestId, status } = body as {
-        requestId: string;
-        status: 'added' | 'delete';
-      };
-      store.mutate((state) => {
-        if (!Array.isArray(state.movieRequests)) state.movieRequests = [];
-        if (status === 'delete') {
-          state.movieRequests = state.movieRequests.filter((r) => r.id !== requestId);
-        } else {
-          const item = state.movieRequests.find((r) => r.id === requestId);
-          if (item) item.status = 'added';
-        }
-      });
-      return NextResponse.json({ movieRequests: store.getDb().movieRequests });
     }
 
     if (body.action === 'SAVE_WATCHLIST') {

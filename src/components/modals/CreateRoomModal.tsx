@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   X,
-  Youtube,
-  Tv,
   Lock,
   Globe,
   Users,
@@ -15,40 +13,36 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useVybe } from '@/context/VybeContext';
-import { CURATED_YOUTUBE_VIDEOS, SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
+import { SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
 import {
   buildClientRoomObject,
-  extractNetflixWatchId,
-  extractYouTubeId,
-  fetchYouTubeMetadata,
   resolveNetflixMetadata,
   saveLocalRoom,
 } from '@/lib/utils';
-import { ControlPermission, PlatformType, RoomPrivacy, WatchRoom } from '@/types/vybe';
+import { ControlPermission, RoomPrivacy, WatchRoom } from '@/types/vybe';
 import { GlowButton } from '@/components/ui/AceternityPrimitives';
 
 export function CreateRoomModal({
   isOpen,
   onClose,
-  initialPlatform = 'youtube',
-  initialVideoId,
-  initialVideoTitle,
+  initialNetflixWatchId,
+  initialNetflixTitle,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  initialPlatform?: PlatformType;
-  initialVideoId?: string;
-  initialVideoTitle?: string;
+  initialNetflixWatchId?: string;
+  initialNetflixTitle?: string;
 }) {
   const router = useRouter();
   const { user, continueAsGuest, addToast } = useVybe();
 
-  const [title, setTitle] = useState('Midnight Watch Party');
+  const [title, setTitle] = useState('Movie Night Watch Party');
   const [description, setDescription] = useState(
     'Grab snacks, jump on voice or chat, and react in real time.'
   );
-  const [platform, setPlatform] = useState<PlatformType>(initialPlatform);
-  const [optionalUrl, setOptionalUrl] = useState(initialVideoId || '');
+  // Rooms always start with the featured Netflix title; each viewer then
+  // watches the same title through their own Netflix.com account.
+  const netflixWatchId = initialNetflixWatchId || SUPPORTED_NETFLIX_TITLES[0].watchId;
   const [privacy, setPrivacy] = useState<RoomPrivacy>('public');
   const [password, setPassword] = useState('');
   const [allowGuests, setAllowGuests] = useState(true);
@@ -72,49 +66,18 @@ export function CreateRoomModal({
         activeUser = await continueAsGuest('Cinema Host');
       }
 
-      let resolvedVideoId =
-        platform === 'youtube'
-          ? CURATED_YOUTUBE_VIDEOS[0].videoId
-          : SUPPORTED_NETFLIX_TITLES[0].watchId;
-      let resolvedTitle =
-        initialVideoTitle ||
-        (platform === 'youtube'
-          ? CURATED_YOUTUBE_VIDEOS[0].title
-          : SUPPORTED_NETFLIX_TITLES[0].title);
-      let resolvedThumbnail =
-        platform === 'youtube'
-          ? CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl
-          : SUPPORTED_NETFLIX_TITLES[0].posterUrl;
-
-      if (optionalUrl.trim()) {
-        if (platform === 'youtube') {
-          const ytId = extractYouTubeId(optionalUrl);
-          if (ytId) {
-            resolvedVideoId = ytId;
-            const meta = await fetchYouTubeMetadata(ytId);
-            resolvedTitle = meta.title;
-            resolvedThumbnail = meta.thumbnailUrl;
-          }
-        } else {
-          const nfId = extractNetflixWatchId(optionalUrl);
-          if (nfId) {
-            resolvedVideoId = nfId;
-            const nfMeta = resolveNetflixMetadata(nfId);
-            resolvedTitle = nfMeta.title;
-            resolvedThumbnail = nfMeta.posterUrl;
-          }
-        }
-      }
+      const watchId = netflixWatchId;
+      const meta = resolveNetflixMetadata(watchId);
 
       const payload = {
-        title: title.trim() || 'Midnight Watch Party',
+        title: title.trim() || 'Movie Night Watch Party',
         description: description.trim(),
         hostId: activeUser.id,
         hostName: activeUser.displayName,
         hostUsername: activeUser.username,
         hostAvatar: activeUser.avatarUrl,
         isGuest: activeUser.isGuest,
-        platform,
+        platform: 'netflix' as const,
         privacy,
         password: password.trim(),
         hasPassword: password.trim().length > 0,
@@ -122,9 +85,9 @@ export function CreateRoomModal({
         waitingRoomEnabled,
         participantLimit,
         controlPermission,
-        videoId: resolvedVideoId,
-        videoTitle: resolvedTitle,
-        videoThumbnail: resolvedThumbnail,
+        videoId: watchId,
+        videoTitle: initialNetflixTitle || meta.title,
+        videoThumbnail: meta.posterUrl,
       };
 
       // Always build local room object first so it is immediately available
@@ -152,7 +115,7 @@ export function CreateRoomModal({
 
       addToast({
         title: `Room ${createdRoom.code} is Live!`,
-        description: `Share code ${createdRoom.code} with friends to watch together.`,
+        description: `Share code ${createdRoom.code} with friends to watch together on Netflix.`,
         variant: 'success',
       });
 
@@ -185,10 +148,10 @@ export function CreateRoomModal({
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">
-                Start a Watch Party
+                Start a Netflix Watch Party
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Pick your platform and room settings — load or switch videos anytime inside the room
+                Pick your room settings — everyone watches the same Netflix title on their own account
               </p>
             </div>
             <button
@@ -206,54 +169,6 @@ export function CreateRoomModal({
           )}
 
           <form onSubmit={handleCreate} className="mt-5 space-y-5">
-            {/* Platform Selection Pills */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                Streaming Platform
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPlatform('youtube')}
-                  className={`flex items-center gap-3.5 rounded-2xl sm:rounded-full px-5 py-3 border text-left transition-all ${
-                    platform === 'youtube'
-                      ? 'bg-gradient-to-r from-[#6D5DFB]/30 to-[#7C3AED]/20 border-vybe-accent shadow-[0_0_28px_-6px_rgba(109,93,251,0.5)]'
-                      : 'bg-white/[0.03] border-white/10 hover:border-white/25'
-                  }`}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                    <Youtube className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-white">YouTube</div>
-                    <div className="text-[11px] text-slate-400">
-                      Paste links & watch in-browser
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPlatform('netflix')}
-                  className={`flex items-center gap-3.5 rounded-2xl sm:rounded-full px-5 py-3 border text-left transition-all ${
-                    platform === 'netflix'
-                      ? 'bg-gradient-to-r from-[#E50914]/30 to-rose-900/20 border-rose-500/70 shadow-[0_0_28px_-6px_rgba(229,9,20,0.45)]'
-                      : 'bg-white/[0.03] border-white/10 hover:border-white/25'
-                  }`}
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#E50914]/25 text-rose-300 border border-[#E50914]/50">
-                    <Tv className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-white">Netflix</div>
-                    <div className="text-[11px] text-slate-400">
-                      Log in & stream tab or extension
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
             {/* Room Identity */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>

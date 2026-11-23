@@ -1,6 +1,11 @@
 /**
- * VYBE Netflix Companion Playback Provider
- * Coordinates browser extension sync, fallback embed video, and tab casting.
+ * VYBE Netflix Companion Provider (Netflix-Only)
+ *
+ * Tracks the authoritative room playback state and forwards authorized
+ * play/pause/seek commands to each participant's own Netflix tab through
+ * the Chrome Extension bridge. The video itself always plays inside the
+ * participant's Netflix tab on netflix.com — VYBE never embeds or proxies
+ * Netflix content.
  */
 
 import { BasePlaybackProvider } from './base-provider';
@@ -10,17 +15,12 @@ import {
   PlaybackProviderType,
   PlayerCapabilities,
 } from '../types';
-import { EventValidation } from '../sync/event-validation';
 
 export class NetflixCompanionProvider extends BasePlaybackProvider {
   public readonly providerType: PlaybackProviderType = 'netflix';
 
-  private containerElement: HTMLElement | null = null;
+  private roomCode = 'NFX-808';
   private bridgeListener: ((event: MessageEvent) => void) | null = null;
-  private activeIframe: HTMLIFrameElement | null = null;
-  private castStream: MediaStream | null = null;
-  private castVideo: HTMLVideoElement | null = null;
-  private roomCode = 'VYB-4K1';
 
   constructor() {
     super('netflix');
@@ -32,11 +32,11 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
       canPause: true,
       canSeek: true,
       canChangeRate: false,
-      canSetVolume: true,
-      supportsEmbeddedPlayback: true,
-      supportsExternalPlayback: true,
-      supportsSubtitles: false,
-      supportsMobileControl: false,
+      canSetVolume: false, // volume is owned by the viewer's Netflix account
+      supportsEmbeddedPlayback: false, // never embed Netflix
+      supportsExternalPlayback: true, // each participant watches via Netflix.com
+      supportsSubtitles: true, // governed by the viewer's own Netflix account
+      supportsMobileControl: false, // Netflix mobile app cannot be controlled from VYBE
     };
   }
 
@@ -51,16 +51,13 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
   }
 
   public async initialize(config: PlaybackInitConfig): Promise<void> {
-    this.containerElement = config.container;
-    this.state.mediaId = config.initialMediaId || '81446667';
-    this.state.title = config.initialTitle || 'Arcane — S1:E1 Welcome to the Playground';
+    this.state.mediaId = config.initialMediaId || '';
+    this.state.title = config.initialTitle || '';
     this.state.posterUrl = config.initialPosterUrl;
     this.state.currentTime = config.initialTime || 0;
     this.state.isPlaying = Boolean(config.initialPlaying);
-    this.state.duration = 2580; // Standard episode length ~43 min
-
+    this.state.isBuffering = false;
     this.setupBridge();
-    this.renderCompanionFrame(this.state.mediaId);
   }
 
   private setupBridge() {
@@ -72,84 +69,28 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
       if (event.data.type === 'NETFLIX_PLAYBACK_EVENT' || event.data.type === 'EXTENSION_HEARTBEAT') {
         const cur = Number(event.data.currentTime || 0);
         const isPlaying = Boolean(event.data.isPlaying);
-        this.updateState({
+        const update: { currentTime: number; isPlaying: boolean; mediaId?: string } = {
           currentTime: cur,
           isPlaying,
-        }, 'remote');
+        };
+        if (event.data.watchId) {
+          update.mediaId = String(event.data.watchId);
+        }
+        this.updateState(update, 'remote');
+      } else if (event.data.type === 'CMD_REJECTED_TITLE_MISMATCH') {
+        this.emit({
+          type: 'ERROR',
+          message: `Sync skipped: you are watching a different Netflix title. Open the same title to join the party.`,
+          fatal: false,
+        });
       }
     };
 
     window.addEventListener('message', this.bridgeListener);
-
     window.postMessage(
       { source: 'VYBE_WEB_APP', type: 'VYBE_ROOM_INIT', roomCode: this.roomCode },
       '*'
     );
-  }
-
-  private renderCompanionFrame(watchId: string) {
-    if (!this.containerElement) return;
-    this.containerElement.innerHTML = '';
-
-    const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed/3jfI-z__GY0?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1`;
-    iframe.className = 'w-full h-full border-0';
-    iframe.allow =
-      'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen';
-    iframe.allowFullscreen = true;
-
-    this.activeIframe = iframe;
-    this.containerElement.appendChild(iframe);
-  }
-
-  public async startTabCast(): Promise<boolean> {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      this.emit({
-        type: 'ERROR',
-        message: 'Tab screen casting is not supported on this device/browser (Desktop Chrome/Edge/Firefox required).',
-        fatal: false,
-      });
-      return false;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 60, max: 60 } },
-        audio: true,
-      });
-      this.castStream = stream;
-
-      if (this.containerElement) {
-        this.containerElement.innerHTML = '';
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.className = 'w-full h-full object-contain bg-black';
-        this.castVideo = video;
-        this.containerElement.appendChild(video);
-      }
-
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        this.stopTabCast();
-      });
-
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  public stopTabCast(): void {
-    if (this.castStream) {
-      this.castStream.getTracks().forEach((t) => t.stop());
-      this.castStream = null;
-    }
-    if (this.castVideo) {
-      this.castVideo.remove();
-      this.castVideo = null;
-    }
-    this.renderCompanionFrame(this.state.mediaId);
   }
 
   public async play(origin: CommandOrigin = 'user'): Promise<void> {
@@ -168,7 +109,7 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
   }
 
   public setPlaybackRate(_rate: number): void {
-    // Unsupported by external Netflix player
+    // Netflix account playback rate is controlled by the viewer in Netflix.
   }
 
   public setVolume(volume: number): void {
@@ -189,7 +130,6 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
     this.state.title = title;
     this.state.posterUrl = posterUrl;
     this.state.currentTime = startTime;
-    this.renderCompanionFrame(mediaId);
     this.dispatchToExtension(this.state.isPlaying, startTime);
   }
 
@@ -213,11 +153,6 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
     if (this.bridgeListener && typeof window !== 'undefined') {
       window.removeEventListener('message', this.bridgeListener);
       this.bridgeListener = null;
-    }
-    this.stopTabCast();
-    if (this.containerElement) {
-      this.containerElement.innerHTML = '';
-      this.containerElement = null;
     }
     this.subscribers.clear();
   }

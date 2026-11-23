@@ -29,17 +29,19 @@ export class SyncEngine {
   private userName = '';
   private roomId = '';
   private roomCode = '';
+  private localNetflixWatchId: string | null = null;
+  private onTitleMismatch?: (remoteId: string, localId: string) => void;
 
-  private currentPlaybackRate = 1.0;
-  private driftCheckTimer: ReturnType<typeof setInterval> | null = null;
   private isDestroyed = false;
 
   constructor(config: SyncEngineConfig) {
     this.playbackManager = config.playbackManager;
     this.onPublishSync = config.onPublishSync;
     this.onDriftReport = config.onDriftReport;
+  }
 
-    this.startDriftMonitoring();
+  public setOnTitleMismatch(handler: (remoteId: string, localId: string) => void) {
+    this.onTitleMismatch = handler;
   }
 
   public updateContext(params: {
@@ -50,6 +52,7 @@ export class SyncEngine {
     userName: string;
     roomId: string;
     roomCode: string;
+    localNetflixWatchId?: string | null;
   }) {
     this.isHost = params.isHost;
     this.userRole = params.userRole;
@@ -58,6 +61,11 @@ export class SyncEngine {
     this.userName = params.userName;
     this.roomId = params.roomId;
     this.roomCode = params.roomCode;
+    this.localNetflixWatchId = params.localNetflixWatchId || null;
+  }
+
+  public setLocalNetflixWatchId(watchId: string | null) {
+    this.localNetflixWatchId = watchId ? watchId.toUpperCase() : null;
   }
 
   public canControlPlayback(): boolean {
@@ -76,6 +84,20 @@ export class SyncEngine {
       // Reject stale or out-of-order sequence packet
       return;
     }
+
+    // Different-title guard: when this participant's Netflix tab reports a
+    // different title than the authoritative room state, do not let the
+    // authoritative clock chase the wrong title. The extension refuses to
+    // apply mismatched commands as well.
+    const remoteId = authoritative.netflixWatchId ? authoritative.netflixWatchId.toUpperCase() : null;
+    const localId = this.localNetflixWatchId;
+    if (remoteId && localId && localId !== remoteId) {
+      if (this.onTitleMismatch) {
+        this.onTitleMismatch(remoteId, localId);
+      }
+      return;
+    }
+
     this.clock.commitSequence(authoritative.seq);
     this.clock.updateServerOffset(authoritative.updatedAt);
 
@@ -88,8 +110,6 @@ export class SyncEngine {
     const localState = this.playbackManager.getState();
     if (!localState) return;
 
-    const capabilities = this.playbackManager.getCapabilities();
-
     // 1. Play/Pause alignment
     if (authoritative.isPlaying !== localState.isPlaying) {
       if (authoritative.isPlaying) {
@@ -99,12 +119,10 @@ export class SyncEngine {
       }
     }
 
-    // 2. Drift correction
-    const plan = DriftCorrection.evaluate(
-      localState.currentTime,
-      projectedTime,
-      capabilities.canChangeRate
-    );
+    // 2. Drift correction — Netflix has no rate-adjust tier; anything
+    // beyond the jitter window becomes a hard seek to the authoritative
+    // position.
+    const plan = DriftCorrection.evaluate(localState.currentTime, projectedTime);
 
     if (this.onDriftReport) {
       this.onDriftReport(plan.driftSec, plan.tier);
@@ -112,14 +130,6 @@ export class SyncEngine {
 
     if (plan.shouldSeek) {
       await this.playbackManager.seek(plan.targetTime, 'remote');
-      this.restoreNormalSpeed();
-    } else if (plan.tier === DriftTier.RATE_ADJUST && capabilities.canChangeRate) {
-      if (this.currentPlaybackRate !== plan.recommendedRate) {
-        this.currentPlaybackRate = plan.recommendedRate;
-        this.playbackManager.setPlaybackRate(plan.recommendedRate);
-      }
-    } else if (plan.tier === DriftTier.IN_SYNC) {
-      this.restoreNormalSpeed();
     }
   }
 
@@ -129,7 +139,6 @@ export class SyncEngine {
   public handleUserAction(action: {
     isPlaying: boolean;
     currentTime: number;
-    platform: 'youtube' | 'netflix';
     videoId: string;
     videoTitle: string;
     videoThumbnail?: string;
@@ -143,11 +152,11 @@ export class SyncEngine {
 
     const updatedPlayback: PlaybackState = {
       roomId: this.roomId,
-      platform: action.platform,
+      platform: 'netflix',
       videoId: action.videoId,
       videoTitle: action.videoTitle,
       videoThumbnail: action.videoThumbnail,
-      netflixWatchId: action.platform === 'netflix' ? action.videoId : undefined,
+      netflixWatchId: action.videoId,
       isPlaying: action.isPlaying,
       currentTime: Number(action.currentTime.toFixed(2)),
       playbackRate: 1.0,
@@ -157,42 +166,10 @@ export class SyncEngine {
       updatedAt: now,
     };
 
-    this.restoreNormalSpeed();
     this.onPublishSync(updatedPlayback);
-  }
-
-  private restoreNormalSpeed() {
-    if (this.currentPlaybackRate !== 1.0) {
-      this.currentPlaybackRate = 1.0;
-      this.playbackManager.setPlaybackRate(1.0);
-    }
-  }
-
-  private startDriftMonitoring() {
-    if (this.driftCheckTimer) clearInterval(this.driftCheckTimer);
-
-    this.driftCheckTimer = setInterval(() => {
-      if (this.isDestroyed || this.isHost) return;
-
-      const localState = this.playbackManager.getState();
-      if (!localState || !localState.isPlaying) return;
-
-      // If we are currently adjusting rate, check if we've converged back to in-sync
-      if (this.currentPlaybackRate !== 1.0) {
-        const capabilities = this.playbackManager.getCapabilities();
-        if (capabilities.canChangeRate) {
-          // If drift has converged back, restore normal speed
-          this.restoreNormalSpeed();
-        }
-      }
-    }, 1200);
   }
 
   public destroy(): void {
     this.isDestroyed = true;
-    if (this.driftCheckTimer) {
-      clearInterval(this.driftCheckTimer);
-      this.driftCheckTimer = null;
-    }
   }
 }

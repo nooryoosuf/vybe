@@ -6,7 +6,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   Tv,
-  Youtube,
   Users,
   MessageSquare,
   ListVideo,
@@ -41,9 +40,7 @@ import {
   RoomPrivacy,
   WatchRoom,
 } from '@/types/vybe';
-import { YouTubeSyncPlayer } from '@/components/room/YouTubeSyncPlayer';
 import { NetflixCompanionDeck } from '@/components/room/NetflixCompanionDeck';
-import { TheaterStage } from '@/components/room/TheaterStage';
 import { PlaybackManager } from '@/lib/playback/playback-manager';
 import { SyncEngine } from '@/lib/playback/sync-engine';
 import { FloatingReactionsLayer } from '@/components/room/FloatingReactionsLayer';
@@ -57,11 +54,12 @@ import {
   formatTimestamp,
   getLocalRoom,
   getLocalRoomMessages,
+  resolveNetflixMetadata,
   saveLocalRoom,
   saveLocalRoomMessages,
 } from '@/lib/utils';
+import { SUPPORTED_NETFLIX_TITLES, VYBE_REACTIONS } from '@/lib/constants';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import { VYBE_REACTIONS } from '@/lib/constants';
 
 export function WatchRoomClient() {
   const params = useParams();
@@ -110,7 +108,6 @@ export function WatchRoomClient() {
   const [localDriftSec, setLocalDriftSec] = useState<number>(0);
 
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const lastHeartbeatSentRef = useRef<number>(0);
   const joinedOnceRef = useRef<boolean>(false);
 
   const playbackManagerRef = useRef<PlaybackManager | null>(null);
@@ -119,6 +116,8 @@ export function WatchRoomClient() {
   }
 
   const syncEngineRef = useRef<SyncEngine | null>(null);
+  const localNetflixTabRef = useRef<string | null>(null);
+  const mismatchToastRef = useRef<number>(0);
   if (!syncEngineRef.current) {
     syncEngineRef.current = new SyncEngine({
       playbackManager: playbackManagerRef.current,
@@ -134,6 +133,17 @@ export function WatchRoomClient() {
       onDriftReport: (drift) => {
         setLocalDriftSec(drift);
       },
+    });
+
+    syncEngineRef.current.setOnTitleMismatch((remoteId, localId) => {
+      const now = Date.now();
+      if (now - mismatchToastRef.current < 5000) return;
+      mismatchToastRef.current = now;
+      addToast({
+        title: 'Different Netflix Title Detected',
+        description: `You are watching title #${localId}, but the room is set to #${remoteId}. Open the same title on Netflix.com to sync.`,
+        variant: 'warning',
+      });
     });
   }
 
@@ -189,6 +199,23 @@ export function WatchRoomClient() {
       if (!event || event.roomCode?.toUpperCase() !== roomCode) return;
 
       if (event.type === 'PLAYBACK_SYNC') {
+        const authoritativeId = event.playback.netflixWatchId
+          ? event.playback.netflixWatchId.toUpperCase()
+          : null;
+        const localTabId = localNetflixTabRef.current;
+
+        if (authoritativeId && localTabId && authoritativeId !== localTabId) {
+          const now = Date.now();
+          if (now - mismatchToastRef.current >= 5000) {
+            mismatchToastRef.current = now;
+            addToast({
+              title: 'Different Netflix Title Detected',
+              description: `You are watching title #${localTabId}, but the room is set to #${authoritativeId}. Open the same title on Netflix.com to sync.`,
+              variant: 'warning',
+            });
+          }
+        }
+
         setRoom((prev) => {
           if (!prev) return prev;
           if (event.playback.seq < prev.playback.seq) return prev;
@@ -199,6 +226,35 @@ export function WatchRoomClient() {
           };
         });
         syncEngineRef.current?.handleRemoteSync(event.playback);
+      } else if (event.type === 'EXTENSION_HEARTBEAT') {
+        // Live observation from a participant's Netflix tab — feeds the
+        // title/position display and the different-title detection.
+        const wid = event.watchId ? String(event.watchId).toUpperCase() : null;
+        const cur = Number(event.currentTime || 0);
+        const isPlaying = Boolean(event.isPlaying);
+        const dur = Number(event.duration || 0);
+
+        setRoom((prev) => {
+          if (!prev) return prev;
+          const nextPlayback: PlaybackState = {
+            ...prev.playback,
+            isPlaying,
+            currentTime: cur,
+          };
+          if (wid) {
+            localNetflixTabRef.current = wid;
+            const knownId = (prev.playback.netflixWatchId || '').toUpperCase();
+            if (!knownId || wid !== knownId) {
+              // Detect a different title or host-side title switching
+              nextPlayback.netflixWatchId = wid;
+              nextPlayback.videoTitle = resolveNetflixMetadata(wid).title;
+            }
+          }
+          if (dur > 0) {
+            nextPlayback.duration = dur;
+          }
+          return { ...prev, playback: nextPlayback };
+        });
       } else if (event.type === 'REQUEST_SYNC') {
         setRoom((prev) => {
           if (!prev || !user) return prev;
@@ -359,7 +415,6 @@ export function WatchRoomClient() {
 
         if (!loadedRoom) {
           // Auto-initialize room for this code so shared room links always work
-          const isNfx = roomCode.startsWith('NFX');
           const autoCreated = buildClientRoomObject({
             title: `Watch Party ${roomCode}`,
             description: 'Synchronized watch party room',
@@ -368,16 +423,15 @@ export function WatchRoomClient() {
             hostUsername: activeUser.username,
             hostAvatar: activeUser.avatarUrl,
             isGuest: activeUser.isGuest,
-            platform: isNfx ? 'netflix' : 'youtube',
+            platform: 'netflix',
             privacy: 'public',
             allowGuests: true,
             waitingRoomEnabled: false,
             participantLimit: 25,
             controlPermission: 'everyone',
-            videoId: isNfx ? '81446667' : 'fXmAurh012s',
-            videoTitle: isNfx
-              ? 'Arcane — S1:E1 Welcome to the Playground'
-              : 'Arcane: League of Legends — Official Trailer',
+            videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
+            videoTitle: SUPPORTED_NETFLIX_TITLES[0].title,
+            videoThumbnail: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
           });
           autoCreated.code = roomCode;
           saveLocalRoom(autoCreated);
@@ -501,59 +555,71 @@ export function WatchRoomClient() {
         userName: user.displayName,
         roomId: room.id,
         roomCode: room.code,
+        localNetflixWatchId: localNetflixTabRef.current,
       });
     }
   }, [room, user, isHost, currentParticipant?.role]);
 
-  // Authoritative playback state change handler
-  const handleLocalPlaybackChange = useCallback(
-    (next: { isPlaying: boolean; currentTime: number }) => {
-      if (!room || !user || !canControlPlayback) return;
+  // ─────────────────────────────────────────────────────────────
+  // Netflix Companion handlers — commands go to the room's
+  // extension pair, which executes them on participants' Netflix tabs.
+  // ─────────────────────────────────────────────────────────────
+  const handleCompanionPlay = useCallback(async () => {
+    if (!room) return;
+    await playbackManagerRef.current?.play('user');
+    syncEngineRef.current?.handleUserAction({
+      isPlaying: true,
+      currentTime: Number(room.playback.currentTime.toFixed(2)),
+      videoId: room.playback.netflixWatchId || room.playback.videoId,
+      videoTitle: room.playback.videoTitle,
+      videoThumbnail: room.playback.videoThumbnail,
+    });
+  }, [room]);
 
-      const updatedPlayback: PlaybackState = {
-        ...room.playback,
-        isPlaying: next.isPlaying,
-        currentTime: Number(next.currentTime.toFixed(2)),
-        seq: room.playback.seq + 1,
-        updatedBy: user.id,
-        updatedByName: user.displayName,
-        updatedAt: Date.now(),
-      };
+  const handleCompanionPause = useCallback(async () => {
+    if (!room) return;
+    await playbackManagerRef.current?.pause('user');
+    syncEngineRef.current?.handleUserAction({
+      isPlaying: false,
+      currentTime: Number(room.playback.currentTime.toFixed(2)),
+      videoId: room.playback.netflixWatchId || room.playback.videoId,
+      videoTitle: room.playback.videoTitle,
+      videoThumbnail: room.playback.videoThumbnail,
+    });
+  }, [room]);
 
-      setRoom((prev) => (prev ? { ...prev, playback: updatedPlayback } : prev));
-
-      publishRealtimeEvent({
-        type: 'PLAYBACK_SYNC',
-        roomCode,
-        playback: updatedPlayback,
-        senderId: user.id,
+  const handleCompanionSeek = useCallback(
+    async (nextTime: number) => {
+      if (!room) return;
+      await playbackManagerRef.current?.seek(nextTime, 'user');
+      syncEngineRef.current?.handleUserAction({
+        isPlaying: room.playback.isPlaying,
+        currentTime: Number(nextTime.toFixed(2)),
+        videoId: room.playback.netflixWatchId || room.playback.videoId,
+        videoTitle: room.playback.videoTitle,
+        videoThumbnail: room.playback.videoThumbnail,
       });
     },
-    [canControlPlayback, publishRealtimeEvent, room, roomCode, user]
+    [room]
   );
 
-  // Local time & drift telemetry report
-  const handleLocalTimeReport = useCallback(
-    (currentTime: number, drift: number, extConnected = true) => {
-      setLocalDriftSec(drift);
-      if (!user || !room) return;
-      const now = Date.now();
-      if (now - lastHeartbeatSentRef.current > 3500) {
-        lastHeartbeatSentRef.current = now;
-        publishRealtimeEvent({
-          type: 'PARTICIPANT_HEARTBEAT',
-          roomCode,
-          participant: {
-            userId: user.id,
-            reportedTime: Number(currentTime.toFixed(1)),
-            syncDrift: drift,
-            extensionConnected: extConnected,
-          },
-        });
-      }
-    },
-    [publishRealtimeEvent, room, roomCode, user]
-  );
+  // Presence heartbeat — reports the last observed Netflix position.
+  useEffect(() => {
+    if (!user || !room) return;
+    const timer = setInterval(() => {
+      if (!room) return;
+      publishRealtimeEvent({
+        type: 'PARTICIPANT_HEARTBEAT',
+        roomCode,
+        participant: {
+          userId: user.id,
+          reportedTime: Number((room.playback.currentTime || 0).toFixed(1)),
+          extensionConnected: true,
+        },
+      });
+    }, 3500);
+    return () => clearInterval(timer);
+  }, [publishRealtimeEvent, room, roomCode, user]);
 
   // Request or force resync
   const handleRequestResync = useCallback(async () => {
@@ -784,21 +850,16 @@ export function WatchRoomClient() {
   );
 
   const handleDirectSwitchMedia = useCallback(
-    async (
-      platform: PlatformType,
-      videoId: string,
-      videoTitle: string,
-      videoThumbnail: string
-    ) => {
+    async (videoId: string, videoTitle: string, videoThumbnail: string) => {
       setRoom((prev) => {
         if (!prev) return prev;
         const nextPlayback: PlaybackState = {
           roomId: prev.id,
-          platform,
+          platform: 'netflix',
           videoId,
           videoTitle,
           videoThumbnail,
-          netflixWatchId: platform === 'netflix' ? videoId : undefined,
+          netflixWatchId: videoId,
           isPlaying: true,
           currentTime: 0,
           playbackRate: 1,
@@ -809,7 +870,7 @@ export function WatchRoomClient() {
         };
         const nextRoom: WatchRoom = {
           ...prev,
-          platform,
+          platform: 'netflix',
           playback: nextPlayback,
         };
         saveLocalRoom(nextRoom);
@@ -840,7 +901,7 @@ export function WatchRoomClient() {
           body: JSON.stringify({
             action: 'CHANGE_MEDIA',
             roomCode,
-            platform,
+            platform: 'netflix',
             videoId,
             videoTitle,
             videoThumbnail,
@@ -1104,19 +1165,9 @@ export function WatchRoomClient() {
               </h1>
 
               {/* Platform Indicator */}
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border shrink-0 ${
-                  room.platform === 'youtube'
-                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-200'
-                    : 'bg-[#E50914]/25 border-[#E50914]/50 text-rose-200'
-                }`}
-              >
-                {room.platform === 'youtube' ? (
-                  <Youtube className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-                ) : (
-                  <Tv className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-                )}
-                <span className="hidden xs:inline">{room.platform}</span>
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border shrink-0 bg-[#E50914]/25 border-[#E50914]/50 text-rose-200">
+                <Tv className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                <span className="hidden xs:inline">netflix</span>
               </span>
             </div>
 
@@ -1155,44 +1206,6 @@ export function WatchRoomClient() {
             >
               <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
               <span>In Sync</span>
-            </button>
-          )}
-
-          {/* Quick Platform Switcher for Host/Permitted Controllers */}
-          {canControlPlayback && (
-            <button
-              type="button"
-              onClick={() => {
-                if (room.platform === 'youtube') {
-                  handleDirectSwitchMedia(
-                    'netflix',
-                    '81446667',
-                    'Arcane — S1:E1 Welcome to the Playground',
-                    'https://i.ytimg.com/vi/3jfI-z__GY0/maxresdefault.jpg'
-                  );
-                } else {
-                  handleDirectSwitchMedia(
-                    'youtube',
-                    'fXmAurh012s',
-                    'Arcane: League of Legends — Official Trailer',
-                    'https://i.ytimg.com/vi/fXmAurh012s/maxresdefault.jpg'
-                  );
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-full vybe-glass-pill hover:bg-white/[0.12] px-2.5 sm:px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:text-white transition"
-              title="Switch between YouTube and Netflix"
-            >
-              {room.platform === 'youtube' ? (
-                <>
-                  <Tv className="h-3.5 w-3.5 text-rose-400" />
-                  <span className="hidden sm:inline">Netflix</span>
-                </>
-              ) : (
-                <>
-                  <Youtube className="h-3.5 w-3.5 text-rose-400" />
-                  <span className="hidden sm:inline">YouTube</span>
-                </>
-              )}
             </button>
           )}
 
@@ -1251,22 +1264,20 @@ export function WatchRoomClient() {
             onMouseEnter={() => setIsVideoHovered(true)}
             onMouseLeave={() => setIsVideoHovered(false)}
           >
-            <TheaterStage
-              playbackManager={playbackManagerRef.current!}
-              syncEngine={syncEngineRef.current!}
+            <NetflixCompanionDeck
               roomCode={room.code}
-              isHost={isHost}
+              watchId={room.playback.netflixWatchId || null}
+              videoTitle={room.playback.videoTitle || null}
+              posterUrl={room.playback.videoThumbnail}
+              authoritativeIsPlaying={room.playback.isPlaying}
+              authoritativeTime={room.playback.currentTime}
+              authoritativeBuffering={Boolean(room.playback.isBuffering)}
+              duration={room.playback.duration}
               canControlPlayback={canControlPlayback}
-              activePlatform={room.platform}
-              activeVideoId={
-                room.platform === 'netflix'
-                  ? room.playback.netflixWatchId || room.playback.videoId
-                  : room.playback.videoId
-              }
-              activeVideoTitle={room.playback.videoTitle}
-              activeVideoThumbnail={room.playback.videoThumbnail}
+              onPlay={handleCompanionPlay}
+              onPause={handleCompanionPause}
+              onSeek={handleCompanionSeek}
               onRequestResync={handleRequestResync}
-              onSwitchMedia={handleDirectSwitchMedia}
             />
 
             {/* Animated Floating Reactions Layer */}
@@ -1446,7 +1457,9 @@ export function WatchRoomClient() {
                   onPlayQueueItemNow={(itemId) =>
                     executeQueueAction({ queueOp: 'PLAY_ITEM', itemId })
                   }
-                  onDirectSwitchMedia={handleDirectSwitchMedia}
+                  onDirectSwitchMedia={(videoId, videoTitle, videoThumbnail) =>
+                    handleDirectSwitchMedia(videoId, videoTitle, videoThumbnail)
+                  }
                 />
               )}
 

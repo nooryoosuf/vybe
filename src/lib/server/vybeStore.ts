@@ -3,7 +3,6 @@ import os from 'os';
 import path from 'path';
 import {
   ChatMessage,
-  MovieRequestItem,
   RealtimeRoomEvent,
   RoomInvitation,
   SavedWatchlist,
@@ -11,7 +10,6 @@ import {
   UserProfile,
   WatchRoom,
 } from '@/types/vybe';
-import { INITIAL_SITE_MOVIES } from '@/lib/constants';
 
 export interface VybeDatabaseSchema {
   users: Record<string, UserProfile & { passwordHash?: string }>;
@@ -20,7 +18,6 @@ export interface VybeDatabaseSchema {
   watchlistsByUser: Record<string, SavedWatchlist[]>;
   invitations: RoomInvitation[];
   siteMovies: SiteMovieItem[];
-  movieRequests: MovieRequestItem[];
 }
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
@@ -34,8 +31,7 @@ function createCleanDatabase(): VybeDatabaseSchema {
     messagesByRoom: {},
     watchlistsByUser: {},
     invitations: [],
-    siteMovies: [...INITIAL_SITE_MOVIES],
-    movieRequests: [],
+    siteMovies: [],
   };
 }
 
@@ -53,9 +49,11 @@ class VybeServerStore {
         const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
         const parsed = JSON.parse(raw) as VybeDatabaseSchema;
         if (parsed && parsed.rooms && parsed.users) {
-          if (!Array.isArray(parsed.siteMovies) || parsed.siteMovies.length === 0) {
-            parsed.siteMovies = [...INITIAL_SITE_MOVIES];
+          if (!Array.isArray(parsed.siteMovies)) {
+            parsed.siteMovies = [];
           }
+          // Drop any pre-seeded movies (they have no user attribution).
+          parsed.siteMovies = parsed.siteMovies.filter((m) => m.addedBy);
           return parsed;
         }
       }

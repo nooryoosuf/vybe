@@ -1,51 +1,10 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { CURATED_YOUTUBE_VIDEOS, INITIAL_SITE_MOVIES, SUPPORTED_NETFLIX_TITLES } from './constants';
-import { ChatMessage, ControlPermission, MovieRequestItem, PlatformType, RoomPrivacy, SiteMovieItem, WatchRoom } from '@/types/vybe';
+import { SUPPORTED_NETFLIX_TITLES } from './constants';
+import { ChatMessage, ControlPermission, PlatformType, RoomPrivacy, SiteMovieItem, WatchRoom } from '@/types/vybe';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-/**
- * Validates and extracts an 11-character YouTube Video ID from any valid URL or raw ID.
- */
-export function extractYouTubeId(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  try {
-    const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
-    const host = url.hostname.replace(/^www\./, '').toLowerCase();
-
-    if (host === 'youtu.be') {
-      const id = url.pathname.split('/').filter(Boolean)[0];
-      return id && /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
-    }
-
-    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
-      const vParam = url.searchParams.get('v');
-      if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam)) {
-        return vParam;
-      }
-      const parts = url.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2 && ['embed', 'shorts', 'live', 'v'].includes(parts[0])) {
-        const candidate = parts[1];
-        return /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
-      }
-    }
-  } catch {
-    const regexMatch = trimmed.match(/(?:v=|\/embed\/|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
-    if (regexMatch && regexMatch[1]) {
-      return regexMatch[1];
-    }
-  }
-
-  return null;
 }
 
 /**
@@ -59,54 +18,6 @@ export function extractNetflixWatchId(input: string): string | null {
   }
   const match = trimmed.match(/netflix\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:watch|title)\/(\d{6,10})/i);
   return match ? match[1] : null;
-}
-
-/**
- * Resolves YouTube video title and thumbnail with a fast 1.5s timeout and instant curated fallback.
- */
-export async function fetchYouTubeMetadata(videoId: string): Promise<{
-  title: string;
-  authorName: string;
-  thumbnailUrl: string;
-}> {
-  const curated = CURATED_YOUTUBE_VIDEOS.find((v) => v.videoId === videoId);
-  const defaultThumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-  if (curated) {
-    return {
-      title: curated.title,
-      authorName: curated.directorOrChannel,
-      thumbnailUrl: curated.thumbnailUrl,
-    };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1600);
-    const res = await fetch(
-      `https://noembed.com/embed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timer);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.title) {
-        return {
-          title: data.title,
-          authorName: data.author_name || 'YouTube Creator',
-          thumbnailUrl: data.thumbnail_url || defaultThumb,
-        };
-      }
-    }
-  } catch {
-    // Fallback immediately without throwing
-  }
-
-  return {
-    title: `YouTube 4K Screening • ${videoId}`,
-    authorName: 'YouTube',
-    thumbnailUrl: defaultThumb,
-  };
 }
 
 export function resolveNetflixMetadata(watchId: string) {
@@ -153,37 +64,13 @@ export function generateRoomCode(): string {
 const LOCAL_ROOMS_KEY = 'vybe_local_rooms_clean_v3';
 const LOCAL_MESSAGES_KEY = 'vybe_local_messages_clean_v3';
 const LOCAL_MOVIES_KEY = 'vybe_local_site_movies_arcane_v3';
-const LOCAL_REQUESTS_KEY = 'vybe_local_movie_requests_v1';
-
-export function getLocalMovieRequests(): MovieRequestItem[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(LOCAL_REQUESTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as MovieRequestItem[];
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    // Ignore
-  }
-  return [];
-}
-
-export function saveLocalMovieRequests(list: MovieRequestItem[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(LOCAL_REQUESTS_KEY, JSON.stringify(list));
-  } catch {
-    // Ignore
-  }
-}
 
 export function getSeedRoomsClient(): Record<string, WatchRoom> {
   return {};
 }
 
 export function getLocalSiteMovies(): SiteMovieItem[] {
-  if (typeof window === 'undefined') return [...INITIAL_SITE_MOVIES];
+  if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_MOVIES_KEY);
     if (raw) {
@@ -195,7 +82,7 @@ export function getLocalSiteMovies(): SiteMovieItem[] {
   } catch {
     // Ignore
   }
-  return [...INITIAL_SITE_MOVIES];
+  return [];
 }
 
 export function saveLocalSiteMovie(movie: SiteMovieItem): SiteMovieItem[] {
@@ -334,7 +221,7 @@ export function buildClientRoomObject(params: {
         isSpeaking: false,
         reportedTime: 0,
         syncDrift: 0,
-        extensionConnected: params.platform === 'youtube',
+        extensionConnected: true,
         joinedAt: nowIso,
         lastActiveAt: nowMs,
       },

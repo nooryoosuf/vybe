@@ -27,7 +27,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'VYBE — Watch Together. Feel Closer. | Social Watch Party Platform',
   description:
-    'Synchronized YouTube & Netflix watch parties with real-time animated scene reactions, live chat, shared watch queues, and low-latency voice & video.',
+    'Synchronized Netflix watch parties with real-time animated scene reactions, live chat, and a shared room experience.',
 };
 
 export default function RootLayout({

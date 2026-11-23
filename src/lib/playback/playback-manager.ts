@@ -1,6 +1,6 @@
 /**
- * VYBE Playback Manager
- * Coordinates active provider lifecycle, provider switching, and normalized controls.
+ * VYBE Playback Manager (Netflix-Only)
+ * Coordinates the single active provider and normalized controls.
  */
 
 import {
@@ -13,13 +13,11 @@ import {
   PlaybackProviderType,
   PlayerCapabilities,
 } from './types';
-import { YouTubePlaybackProvider } from './providers/youtube-provider';
-import { LocalMediaPlaybackProvider } from './providers/local-media-provider';
 import { NetflixCompanionProvider } from './providers/netflix-companion';
 
 export class PlaybackManager {
   private activeProvider: IPlaybackProvider | null = null;
-  private currentType: PlaybackProviderType = 'youtube';
+  private currentType: PlaybackProviderType = 'netflix';
   private listeners: Set<PlaybackEventListener> = new Set();
   private containerElement: HTMLElement | null = null;
   private providerUnsubscribe: (() => void) | null = null;
@@ -70,9 +68,6 @@ export class PlaybackManager {
     }
   }
 
-  /**
-   * Switch or initialize provider.
-   */
   public async switchProvider(
     type: PlaybackProviderType,
     config: PlaybackInitConfig
@@ -89,21 +84,7 @@ export class PlaybackManager {
     this.currentType = type;
     this.containerElement = config.container;
 
-    let provider: IPlaybackProvider;
-    switch (type) {
-      case 'youtube':
-        provider = new YouTubePlaybackProvider();
-        break;
-      case 'local_media':
-        provider = new LocalMediaPlaybackProvider();
-        break;
-      case 'netflix':
-        provider = new NetflixCompanionProvider();
-        break;
-      default:
-        provider = new YouTubePlaybackProvider();
-    }
-
+    const provider = new NetflixCompanionProvider();
     this.activeProvider = provider;
 
     this.providerUnsubscribe = provider.subscribe((event) => {

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   X,
@@ -11,10 +12,15 @@ import {
   LogOut,
   Eye,
   Gauge,
+  Users,
+  UserPlus,
+  UserMinus,
+  AtSign,
+  ChevronRight,
 } from 'lucide-react';
 import { useVybe } from '@/context/VybeContext';
 import { ACCENT_COLORS, AVATAR_PRESETS } from '@/lib/constants';
-import { PresenceStatus } from '@/types/vybe';
+import { PresenceStatus, UserProfile } from '@/types/vybe';
 import { GlowButton } from '@/components/ui/AceternityPrimitives';
 
 export function ProfileSettingsModal() {
@@ -25,15 +31,22 @@ export function ProfileSettingsModal() {
     updateProfile,
     updatePreferences,
     signOut,
+    addFriend,
+    removeFriend,
   } = useVybe();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'preferences'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'preferences' | 'friends'>('profile');
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(AVATAR_PRESETS[0]);
   const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>('online');
   const [accentColor, setAccentColor] = useState('#6D5DFB');
+
+  // ── Friends tab state ─────────────────────────────────────────────
+  const [friendUsername, setFriendUsername] = useState('');
+  const [serverUsers, setServerUsers] = useState<UserProfile[]>([]);
+  const [fetchingUsers, setFetchingUsers] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -46,21 +59,405 @@ export function ProfileSettingsModal() {
     }
   }, [user, isProfileModalOpen]);
 
+  const refreshServerUsers = useCallback(async () => {
+    setFetchingUsers(true);
+    try {
+      const res = await fetch(`/api/state?userId=${encodeURIComponent(user?.id || 'default')}`);
+      const data = await res.json();
+      const others = (data.users || []).filter((u: UserProfile) => u.id !== user?.id);
+      setServerUsers(others);
+    } catch {
+      // Ignore network error — still show local state
+    } finally {
+      setFetchingUsers(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (isProfileModalOpen && user) {
+      refreshServerUsers();
+    }
+  }, [isProfileModalOpen, user?.id, refreshServerUsers]);
+
   if (!isProfileModalOpen || !user) return null;
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await updateProfile({
-      displayName: displayName.trim() || user.displayName,
-      username: username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || user.username,
-      bio: bio.trim(),
-      avatarUrl,
-      presenceStatus,
-      accentColor,
-      isGuest: false,
-    });
-    setProfileModalOpen(false);
+  const handleAddFriend = async () => {
+    const clean = friendUsername.trim();
+    if (!clean) return;
+    const ok = await addFriend(clean);
+    if (ok) {
+      setFriendUsername('');
+      await refreshServerUsers();
+    }
   };
+
+  const myFriends = serverUsers.filter((u) => (user?.friendIds || []).includes(u.id));
+  const discoverUsers = serverUsers.filter((u) => !(user?.friendIds || []).includes(u.id));
+
+  // ==================================================================
+  // Tab bodies
+  // ==================================================================
+
+  const profileForm = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        updateProfile({
+          displayName: displayName.trim() || user.displayName,
+          username: username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '') || user.username,
+          bio: bio.trim(),
+          avatarUrl,
+          presenceStatus,
+          accentColor,
+          isGuest: false,
+        });
+        setProfileModalOpen(false);
+      }}
+      className="mt-5 space-y-4"
+    >
+      <div>
+        <label className="block text-xs font-medium text-slate-300 mb-2">Choose Avatar</label>
+        <div className="grid grid-cols-8 gap-2">
+          {AVATAR_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setAvatarUrl(preset)}
+              className={`relative h-10 w-10 rounded-full overflow-hidden transition-transform ${
+                avatarUrl === preset
+                  ? 'ring-2 ring-vybe-accent scale-110'
+                  : 'opacity-70 hover:opacity-100'
+              }`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preset} alt="Avatar preset" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1">Display Name</label>
+          <input
+            type="text"
+            required
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1">Username</label>
+          <input
+            type="text"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-300 mb-1">Bio / Status Line</label>
+        <input
+          type="text"
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          placeholder="Sci-Fi & late-night watch party host..."
+          className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1.5">Live Presence Status</label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                { id: 'online', label: 'Online', color: '#10B981' },
+                { id: 'watching', label: 'Watching', color: '#6D5DFB' },
+                { id: 'away', label: 'Away', color: '#F59E0B' },
+              ] as const
+            ).map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => setPresenceStatus(st.id)}
+                className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-2 text-xs font-medium border transition-all ${
+                  presenceStatus === st.id
+                    ? 'bg-[#161A2B] border-vybe-accent text-white'
+                    : 'bg-[#07080D] border-white/10 text-slate-400'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: st.color }} />
+                <span>{st.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-300 mb-1.5">
+            Personal Aura Accent
+          </label>
+          <div className="flex items-center gap-2 pt-1">
+            {ACCENT_COLORS.map((col) => (
+              <button
+                key={col.hex}
+                type="button"
+                onClick={() => setAccentColor(col.hex)}
+                title={col.name}
+                className="relative h-7 w-7 rounded-full flex items-center justify-center transition-transform hover:scale-110"
+                style={{ backgroundColor: col.hex }}
+              >
+                {accentColor === col.hex && <Check className="h-3.5 w-3.5 text-white" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-3 flex items-center justify-between border-t border-white/10">
+        <GlowButton variant="danger" type="button" onClick={async () => {
+          await signOut();
+          setProfileModalOpen(false);
+        }}>
+          <LogOut className="h-4 w-4" />
+          <span>Sign Out</span>
+        </GlowButton>
+
+        <GlowButton type="submit">
+          <Sparkles className="h-4 w-4" />
+          <span>Save Profile</span>
+        </GlowButton>
+      </div>
+    </form>
+  );
+
+  const preferencesSection = (
+    <div className="mt-5 space-y-4">
+      <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
+        <div>
+          <div className="text-xs font-semibold text-white">Reduced Motion Accessibility</div>
+          <div className="text-[11px] text-slate-400">
+            Simplify floating reaction trajectories and disable ambient motion
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={user.preferences.reducedMotion}
+          onChange={(e) => updatePreferences({ reducedMotion: e.target.checked })}
+          className="h-4 w-4 accent-vybe-accent rounded"
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
+        <div>
+          <div className="text-xs font-semibold text-white">Default Floating Theater Chat</div>
+          <div className="text-[11px] text-slate-400">
+            Start watch rooms with expanded video and translucent floating chat overlay
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={user.preferences.floatingChatDefault}
+          onChange={(e) => updatePreferences({ floatingChatDefault: e.target.checked })}
+          className="h-4 w-4 accent-vybe-accent rounded"
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
+        <div className="flex items-center gap-2.5">
+          <Eye className="h-4 w-4 text-vybe-accentLight" />
+          <div>
+            <div className="text-xs font-semibold text-white">Share Live Activity with Friends</div>
+            <div className="text-[11px] text-slate-400">
+              Let friends see which public watch room you are currently watching
+            </div>
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          checked={user.preferences.showPresenceToFriends}
+          onChange={(e) => updatePreferences({ showPresenceToFriends: e.target.checked })}
+          className="h-4 w-4 accent-vybe-accent rounded"
+        />
+      </div>
+
+      <div className="rounded-xl bg-[#07080D] border border-white/10 p-3.5">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-emerald-400" />
+            <span className="text-xs font-semibold text-white">Auto-Sync Drift Tolerance</span>
+          </div>
+          <span className="text-xs font-mono text-vybe-accentLight">
+            ±{user.preferences.autoSyncThresholdSec.toFixed(1)}s
+          </span>
+        </div>
+        <input
+          type="range"
+          min={1.0}
+          max={5.0}
+          step={0.5}
+          value={user.preferences.autoSyncThresholdSec}
+          onChange={(e) => updatePreferences({ autoSyncThresholdSec: parseFloat(e.target.value) })}
+          className="w-full accent-vybe-accent"
+        />
+        <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+          <span>Strict (±1.0s)</span>
+          <span>Balanced (±2.0s)</span>
+          <span>Relaxed (±5.0s)</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const friendsSection = (
+    <div className="mt-5 space-y-4">
+      {/* Add Friend by @username */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleAddFriend();
+        }}
+        className="flex items-center gap-2 rounded-full vybe-glass-pill p-1.5"
+      >
+        <AtSign className="h-3.5 w-3.5 text-vybe-accentLight ml-2.5 shrink-0" />
+        <input
+          type="text"
+          value={friendUsername}
+          onChange={(e) => setFriendUsername(e.target.value)}
+          placeholder="Add a friend by their @username"
+          className="flex-1 min-w-0 bg-transparent px-1.5 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none"
+        />
+        <GlowButton type="submit" disabled={fetchingUsers || !friendUsername.trim()} className="py-1.5 px-4 text-xs shrink-0">
+          <UserPlus className="h-3.5 w-3.5" />
+          <span>Add</span>
+        </GlowButton>
+      </form>
+
+      {/* My Friends List */}
+      <div>
+        <div className="text-xs font-semibold text-slate-300 mb-2.5 flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5 text-emerald-400" />
+          <span>Friends ({myFriends.length})</span>
+        </div>
+        {myFriends.length === 0 ? (
+          <div className="rounded-2xl bg-white/[0.02] border border-white/10 p-4 text-center text-xs text-slate-400">
+            You have not added any friends yet. Ask your friends to create an account on VYBE and enter their @username above!
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {myFriends.map((friend) => {
+              const inRoom = friend.currentRoomCode;
+              return (
+                <div
+                  key={friend.id}
+                  className="rounded-full vybe-glass-pill pl-2.5 pr-3 py-2 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={friend.avatarUrl}
+                      alt={friend.displayName}
+                      className="h-8 w-8 rounded-full object-cover shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate">
+                        {friend.displayName}{' '}
+                        <span className="font-normal text-slate-400">
+                          @{friend.username}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {inRoom ? `Watching in Room ${inRoom}` : 'Online'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {inRoom && (
+                      <Link
+                        href={`/room?code=${encodeURIComponent(inRoom)}`}
+                        className="rounded-full bg-vybe-accent hover:bg-vybe-accentLight px-3 py-1 text-[11px] font-bold text-white transition"
+                      >
+                        Join Room
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeFriend(friend.id)}
+                      className="rounded-full p-1 text-slate-400 hover:text-rose-400 transition"
+                      title="Remove friend"
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* People on VYBE — quick add */}
+      {discoverUsers.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-slate-300 mb-2.5 flex items-center gap-1.5">
+            <UserPlus className="h-3.5 w-3.5 text-vybe-accentLight" />
+            <span>People on VYBE ({discoverUsers.length})</span>
+          </div>
+          <div className="space-y-1.5">
+            {discoverUsers.slice(0, 8).map((person) => (
+              <div
+                key={person.id}
+                className="flex items-center justify-between gap-2 rounded-full bg-white/[0.03] border border-white/10 pl-2.5 pr-3 py-1.5"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={person.avatarUrl}
+                    alt={person.displayName}
+                    className="h-7 w-7 rounded-full object-cover shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      {person.displayName}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      @{person.username}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={fetchingUsers}
+                  onClick={() => {
+                    addFriend(person.username);
+                    refreshServerUsers();
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full bg-vybe-accent/25 hover:bg-vybe-accent border border-vybe-accent/50 px-3 py-1 text-[11px] font-bold text-white transition shrink-0"
+                >
+                  <UserPlus className="h-3 w-3" />
+                  <span>Add</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {fetchingUsers && (
+        <div className="text-[11px] text-slate-400 text-center py-2">
+          Loading people on VYBE…
+        </div>
+      )}
+    </div>
+  );
+
+  const chevron = <ChevronRight className="h-3.5 w-3.5 text-slate-400" />;
 
   return (
     <AnimatePresence>
@@ -90,7 +487,7 @@ export function ProfileSettingsModal() {
               <div>
                 <h2 className="text-base font-bold text-white">Profile & Preferences</h2>
                 <p className="text-xs text-slate-400">
-                  Customize your cinema identity, presence & playback settings
+                  Identity, friends, presence & playback settings
                 </p>
               </div>
             </div>
@@ -102,7 +499,8 @@ export function ProfileSettingsModal() {
             </button>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-1.5 rounded-xl bg-[#07080D] p-1 border border-white/5">
+          {/* 3 Tab Bar */}
+          <div className="mt-5 grid grid-cols-3 gap-1.5 rounded-xl bg-[#07080D] p-1 border border-white/5">
             <button
               type="button"
               onClick={() => setActiveTab('profile')}
@@ -113,7 +511,8 @@ export function ProfileSettingsModal() {
               }`}
             >
               <User className="h-3.5 w-3.5" />
-              <span>Identity & Presence</span>
+              <span>Identity</span>
+              {chevron}
             </button>
             <button
               type="button"
@@ -125,245 +524,28 @@ export function ProfileSettingsModal() {
               }`}
             >
               <Sliders className="h-3.5 w-3.5" />
-              <span>Playback & Accessibility</span>
+              <span>Playback</span>
+              {chevron}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('friends')}
+              className={`flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold transition-all ${
+                activeTab === 'friends'
+                  ? 'bg-[#161A2B] text-white border border-white/10'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Friends</span>
+              {chevron}
             </button>
           </div>
 
-          {activeTab === 'profile' ? (
-            <form onSubmit={handleSaveProfile} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2">
-                  Choose Avatar
-                </label>
-                <div className="grid grid-cols-8 gap-2">
-                  {AVATAR_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setAvatarUrl(preset)}
-                      className={`relative h-10 w-10 rounded-full overflow-hidden transition-transform ${
-                        avatarUrl === preset
-                          ? 'ring-2 ring-vybe-accent scale-110'
-                          : 'opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={preset} alt="Avatar preset" className="h-full w-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Username
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Bio / Status Line
-                </label>
-                <input
-                  type="text"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Sci-Fi & late-night watch party host..."
-                  className="w-full rounded-xl bg-[#07080D] border border-white/10 px-3.5 py-2 text-sm text-white focus:border-vybe-accent focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Live Presence Status
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(
-                      [
-                        { id: 'online', label: 'Online', color: '#10B981' },
-                        { id: 'watching', label: 'Watching', color: '#6D5DFB' },
-                        { id: 'away', label: 'Away', color: '#F59E0B' },
-                      ] as const
-                    ).map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => setPresenceStatus(st.id)}
-                        className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-2 text-xs font-medium border transition-all ${
-                          presenceStatus === st.id
-                            ? 'bg-[#161A2B] border-vybe-accent text-white'
-                            : 'bg-[#07080D] border-white/10 text-slate-400'
-                        }`}
-                      >
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: st.color }}
-                        />
-                        <span>{st.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Personal Aura Accent
-                  </label>
-                  <div className="flex items-center gap-2 pt-1">
-                    {ACCENT_COLORS.map((col) => (
-                      <button
-                        key={col.hex}
-                        type="button"
-                        onClick={() => setAccentColor(col.hex)}
-                        title={col.name}
-                        className="relative h-7 w-7 rounded-full flex items-center justify-center transition-transform hover:scale-110"
-                        style={{ backgroundColor: col.hex }}
-                      >
-                        {accentColor === col.hex && (
-                          <Check className="h-3.5 w-3.5 text-white" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-3 flex items-center justify-between border-t border-white/10">
-                <GlowButton
-                  variant="danger"
-                  type="button"
-                  onClick={async () => {
-                    await signOut();
-                    setProfileModalOpen(false);
-                  }}
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span>Sign Out</span>
-                </GlowButton>
-
-                <GlowButton type="submit">
-                  <Sparkles className="h-4 w-4" />
-                  <span>Save Profile</span>
-                </GlowButton>
-              </div>
-            </form>
-          ) : (
-            <div className="mt-5 space-y-4">
-              <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
-                <div>
-                  <div className="text-xs font-semibold text-white">
-                    Reduced Motion Accessibility
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Simplify floating reaction trajectories and disable ambient motion
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={user.preferences.reducedMotion}
-                  onChange={(e) =>
-                    updatePreferences({ reducedMotion: e.target.checked })
-                  }
-                  className="h-4 w-4 accent-vybe-accent rounded"
-                />
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
-                <div>
-                  <div className="text-xs font-semibold text-white">
-                    Default Floating Theater Chat
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    Start watch rooms with expanded video and translucent floating chat overlay
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={user.preferences.floatingChatDefault}
-                  onChange={(e) =>
-                    updatePreferences({ floatingChatDefault: e.target.checked })
-                  }
-                  className="h-4 w-4 accent-vybe-accent rounded"
-                />
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-[#07080D] border border-white/10 p-3.5">
-                <div className="flex items-center gap-2.5">
-                  <Eye className="h-4 w-4 text-vybe-accentLight" />
-                  <div>
-                    <div className="text-xs font-semibold text-white">
-                      Share Live Activity with Friends
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Let friends see which public watch room you are currently watching
-                    </div>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={user.preferences.showPresenceToFriends}
-                  onChange={(e) =>
-                    updatePreferences({ showPresenceToFriends: e.target.checked })
-                  }
-                  className="h-4 w-4 accent-vybe-accent rounded"
-                />
-              </div>
-
-              <div className="rounded-xl bg-[#07080D] border border-white/10 p-3.5">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Gauge className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-semibold text-white">
-                      Auto-Sync Drift Tolerance
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono text-vybe-accentLight">
-                    ±{user.preferences.autoSyncThresholdSec.toFixed(1)}s
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={1.0}
-                  max={5.0}
-                  step={0.5}
-                  value={user.preferences.autoSyncThresholdSec}
-                  onChange={(e) =>
-                    updatePreferences({
-                      autoSyncThresholdSec: parseFloat(e.target.value),
-                    })
-                  }
-                  className="w-full accent-vybe-accent"
-                />
-                <div className="mt-1 flex justify-between text-[10px] text-slate-500">
-                  <span>Strict (±1.0s)</span>
-                  <span>Balanced (±2.0s)</span>
-                  <span>Relaxed (±5.0s)</span>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Tab Content */}
+          {activeTab === 'profile' && profileForm}
+          {activeTab === 'preferences' && preferencesSection}
+          {activeTab === 'friends' && friendsSection}
         </motion.div>
       </div>
     </AnimatePresence>

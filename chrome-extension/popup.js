@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.runtime.sendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
     if (res && res.state) {
       roomInput.value = res.state.roomCode || 'NFX-808';
-      urlInput.value = res.state.vybeBaseUrl || 'http://localhost:3000';
+      urlInput.value = res.state.vybeBaseUrl || 'http://localhost:3100';
       if (res.state.lastWatchId) {
         telemetry.textContent = `Detected Netflix Watch ID #${res.state.lastWatchId} @ ${Math.floor(
           res.state.currentTime || 0
@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   connectBtn.addEventListener('click', () => {
     const roomCode = roomInput.value.trim().toUpperCase() || 'NFX-808';
-    const vybeBaseUrl = urlInput.value.trim() || 'http://localhost:3000';
+    const vybeBaseUrl = urlInput.value.trim() || 'http://localhost:3100';
 
     chrome.runtime.sendMessage(
       {

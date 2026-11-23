@@ -6,6 +6,7 @@ import {
   RoomParticipant,
   WatchRoom,
 } from '@/types/vybe';
+import { SUPPORTED_NETFLIX_TITLES } from '@/lib/constants';
 import { generateRoomCode } from '@/lib/utils';
 
 const corsHeaders = {
@@ -60,13 +61,10 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
     const nowMs = Date.now();
     const roomId = `room-${code.toLowerCase()}-${nowMs.toString(36)}`;
-    const platform = body.platform === 'netflix' ? 'netflix' : 'youtube';
-    const videoId = body.videoId || (platform === 'netflix' ? '80057281' : 'aqz-KE-bpKQ');
-    const videoTitle =
-      body.videoTitle ||
-      (platform === 'netflix'
-        ? 'Stranger Things — S1:E1 Chapter One'
-        : 'Big Buck Bunny — 4K 60fps Open Film');
+    const platform = 'netflix';
+    const videoId =
+      body.videoId || body.netflixWatchId || SUPPORTED_NETFLIX_TITLES[0].watchId;
+    const videoTitle = body.videoTitle || SUPPORTED_NETFLIX_TITLES[0].title;
 
     const hostParticipant: RoomParticipant = {
       userId: body.hostId,
@@ -84,7 +82,7 @@ export async function POST(req: NextRequest) {
       isSpeaking: false,
       reportedTime: 0,
       syncDrift: 0,
-      extensionConnected: platform === 'youtube',
+      extensionConnected: true,
       joinedAt: nowIso,
       lastActiveAt: nowMs,
     };
@@ -275,7 +273,7 @@ export async function PATCH(req: NextRequest) {
             isSpeaking: false,
             reportedTime: r.playback.currentTime,
             syncDrift: 0,
-            extensionConnected: r.platform === 'youtube',
+            extensionConnected: true,
             joinedAt: nowIso,
             lastActiveAt: nowMs,
           });

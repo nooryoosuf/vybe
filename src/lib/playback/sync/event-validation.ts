@@ -4,7 +4,6 @@
  */
 
 import { ControlPermission, MemberRole } from '@/types/vybe';
-import { CommandOrigin } from '../types';
 
 export class EventValidation {
   private static activeRemoteCommandLock = false;
@@ -57,18 +56,4 @@ export class EventValidation {
     return this.activeRemoteCommandLock;
   }
 
-  /**
-   * Determine whether a native player event should be broadcast out to the room.
-   */
-  public static shouldBroadcastLocalEvent(
-    origin: CommandOrigin,
-    hasControlPermission: boolean
-  ): boolean {
-    // Never broadcast events that were caused by incoming remote commands
-    if (origin === 'remote' || this.activeRemoteCommandLock) {
-      return false;
-    }
-    // Only users with control permission can issue authoritative broadcasts
-    return hasControlPermission;
-  }
 }

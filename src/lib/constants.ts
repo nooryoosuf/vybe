@@ -1,4 +1,4 @@
-import { ReactionDefinition, SiteMovieItem } from '@/types/vybe';
+import { ReactionDefinition } from '@/types/vybe';
 
 export const VYBE_REACTIONS: ReactionDefinition[] = [
   { id: 'love', emoji: '❤️', label: 'Love', shortcut: '1', isSpecial: true, glowColor: 'rgba(244, 63, 94, 0.55)' },
@@ -10,55 +10,6 @@ export const VYBE_REACTIONS: ReactionDefinition[] = [
   { id: 'mindblown', emoji: '🤯', label: 'Mind blown', shortcut: '7', isSpecial: true, glowColor: 'rgba(139, 92, 246, 0.65)' },
   { id: 'dead', emoji: '💀', label: 'Dead', shortcut: '8', isSpecial: false, glowColor: 'rgba(226, 232, 240, 0.4)' },
   { id: 'emotional', emoji: '🥹', label: 'Emotional', shortcut: '9', isSpecial: false, glowColor: 'rgba(244, 114, 182, 0.45)' },
-];
-
-export interface CuratedYouTubeMedia {
-  videoId: string;
-  title: string;
-  directorOrChannel: string;
-  durationLabel: string;
-  genre: string;
-  thumbnailUrl: string;
-  description: string;
-}
-
-export const CURATED_YOUTUBE_VIDEOS: CuratedYouTubeMedia[] = [
-  {
-    videoId: 'fXmAurh012s',
-    title: 'Arcane: League of Legends — Official Trailer',
-    directorOrChannel: 'Netflix / Riot Games',
-    durationLabel: '02:13',
-    genre: 'Arcane • Piltover & Zaun',
-    thumbnailUrl: 'https://i.ytimg.com/vi/fXmAurh012s/maxresdefault.jpg',
-    description: 'Every legend has a beginning. Official trailer for Arcane: League of Legends.',
-  },
-  {
-    videoId: '3jfI-z__GY0',
-    title: 'Arcane — Welcome to the Playground (Official Visualizer)',
-    directorOrChannel: 'Riot Games Music',
-    durationLabel: '03:51',
-    genre: 'Arcane • Episode 1',
-    thumbnailUrl: 'https://i.ytimg.com/vi/3jfI-z__GY0/maxresdefault.jpg',
-    description: 'Into the lanes of Zaun: official Arcane Act I soundtrack & scene visualizer.',
-  },
-  {
-    videoId: 'F5tOuijpFD0',
-    title: 'Arcane — Imagine Dragons x J.I.D: Enemy (Official Video)',
-    directorOrChannel: 'League of Legends',
-    durationLabel: '03:34',
-    genre: 'Arcane • Opening Theme',
-    thumbnailUrl: 'https://i.ytimg.com/vi/F5tOuijpFD0/maxresdefault.jpg',
-    description: 'Official animated music video featuring young Vi, Powder, and Ekko in Zaun.',
-  },
-  {
-    videoId: 'Mz4-38d3-AE',
-    title: 'Arcane: Bridging the Rift — Part 1 (Full Documentary Episode)',
-    directorOrChannel: 'League of Legends',
-    durationLabel: '25:42',
-    genre: 'Arcane • Documentary',
-    thumbnailUrl: 'https://i.ytimg.com/vi/Mz4-38d3-AE/maxresdefault.jpg',
-    description: 'Inside Fortiche and Riot Games: the 6-year journey to bring Vi and Jinx to life.',
-  },
 ];
 
 export interface SupportedNetflixTitle {
@@ -164,20 +115,6 @@ export const SUPPORTED_NETFLIX_TITLES: SupportedNetflixTitle[] = [
     posterUrl: 'https://i.ytimg.com/vi/fXmAurh012s/maxresdefault.jpg',
   },
 ];
-
-export const INITIAL_SITE_MOVIES: SiteMovieItem[] = SUPPORTED_NETFLIX_TITLES.map(
-  (ep, idx) => ({
-    id: `arcane-s1-e${idx + 1}`,
-    title: ep.title,
-    genre: ep.genre,
-    durationLabel: `${ep.durationLabel} • Ep ${idx + 1}`,
-    year: ep.year,
-    platform: 'netflix',
-    videoId: ep.watchId,
-    thumbnailUrl: ep.posterUrl,
-    description: ep.synopsis,
-  })
-);
 
 export interface CinemaGifItem {
   id: string;

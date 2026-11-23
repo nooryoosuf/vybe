@@ -46,18 +46,6 @@ export function VoiceVideoDock({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    fetch('/api/livekit/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        roomCode,
-        userId: currentUserId,
-        displayName: currentUserName,
-      }),
-    }).catch(() => {});
-  }, [roomCode, currentUserId, currentUserName]);
-
   const refreshDevices = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
       return;

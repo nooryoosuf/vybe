@@ -1,4 +1,4 @@
-export type PlatformType = 'youtube' | 'netflix';
+export type PlatformType = 'netflix';
 export type RoomPrivacy = 'public' | 'private';
 export type ControlPermission = 'host_only' | 'cohosts' | 'everyone';
 export type MemberRole = 'host' | 'cohost' | 'member' | 'guest';
@@ -35,19 +35,6 @@ export interface SiteMovieItem {
   addedBy?: string;
 }
 
-export interface MovieRequestItem {
-  id: string;
-  title: string;
-  platform: PlatformType;
-  note: string;
-  requestedById: string;
-  requestedByName: string;
-  requestedByUsername: string;
-  upvoterIds: string[];
-  status: 'pending' | 'added';
-  createdAt: string;
-}
-
 export interface UserPreferences {
   reducedMotion: boolean;
   reactionSounds: boolean;
@@ -71,6 +58,8 @@ export interface PlaybackState {
   updatedBy: string;
   updatedByName: string;
   updatedAt: number; // epoch ms
+  duration?: number; // in seconds, reported by participants' Netflix tabs
+  isBuffering?: boolean; // true while a participant's Netflix tab buffers
 }
 
 export interface RoomParticipant {
@@ -224,5 +213,15 @@ export type RealtimeRoomEvent =
   | { type: 'CHAT_REACTION'; roomCode: string; messageId: string; emoji: string; userId: string }
   | { type: 'ROOM_UPDATED'; roomCode: string; room: WatchRoom }
   | { type: 'PARTICIPANT_HEARTBEAT'; roomCode: string; participant: Partial<RoomParticipant> & { userId: string } }
-  | { type: 'WEBRTC_SIGNAL'; roomCode: string; fromUserId: string; toUserId: string; signal: unknown }
+  | {
+      type: 'EXTENSION_HEARTBEAT';
+      roomCode: string;
+      pageType?: string;
+      watchId?: string | null;
+      isPlaying?: boolean;
+      isBuffering?: boolean;
+      currentTime?: number;
+      duration?: number;
+    }
+  | { type: 'CMD_REJECTED_TITLE_MISMATCH'; roomCode: string; expectedWatchId: string; commandedWatchId: string }
   | { type: 'ROOM_ENDED'; roomCode: string; endedBy: string };

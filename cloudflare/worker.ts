@@ -1,6 +1,5 @@
 import {
   ChatMessage,
-  MovieRequestItem,
   QueueItem,
   RealtimeRoomEvent,
   RoomInvitation,
@@ -10,12 +9,7 @@ import {
   UserProfile,
   WatchRoom,
 } from '../src/types/vybe';
-import {
-  AVATAR_PRESETS,
-  CURATED_YOUTUBE_VIDEOS,
-  INITIAL_SITE_MOVIES,
-  SUPPORTED_NETFLIX_TITLES,
-} from '../src/lib/constants';
+import { AVATAR_PRESETS, SUPPORTED_NETFLIX_TITLES } from '../src/lib/constants';
 import { generateRoomCode } from '../src/lib/utils';
 
 interface Env {
@@ -31,7 +25,6 @@ interface EdgeDb {
   watchlistsByUser: Record<string, SavedWatchlist[]>;
   invitations: RoomInvitation[];
   siteMovies: SiteMovieItem[];
-  movieRequests: MovieRequestItem[];
 }
 
 type SseListener = (payload: { channel: string; event: RealtimeRoomEvent }) => void;
@@ -45,8 +38,7 @@ function createInitialDb(): EdgeDb {
     messagesByRoom: {},
     watchlistsByUser: {},
     invitations: [],
-    siteMovies: [...INITIAL_SITE_MOVIES],
-    movieRequests: [],
+    siteMovies: [],
   };
 }
 
@@ -145,8 +137,7 @@ export default {
           users,
           watchlists,
           invitations,
-          siteMovies: db.siteMovies?.length ? db.siteMovies : INITIAL_SITE_MOVIES,
-          movieRequests: db.movieRequests || [],
+          siteMovies: db.siteMovies?.length ? db.siteMovies : [],
         });
       }
       if (req.method === 'POST') {
@@ -220,31 +211,6 @@ export default {
           db.siteMovies.unshift(body.movie);
           return jsonResponse({ siteMovies: db.siteMovies });
         }
-        if (body.action === 'CREATE_MOVIE_REQUEST' && body.requestItem) {
-          db.movieRequests.unshift(body.requestItem);
-          return jsonResponse({ movieRequests: db.movieRequests });
-        }
-        if (body.action === 'VOTE_MOVIE_REQUEST') {
-          const item = db.movieRequests.find((r) => r.id === body.requestId);
-          if (item) {
-            if (item.upvoterIds.includes(body.userId)) {
-              item.upvoterIds = item.upvoterIds.filter((id) => id !== body.userId);
-            } else {
-              item.upvoterIds.push(body.userId);
-            }
-            db.movieRequests.sort((a, b) => b.upvoterIds.length - a.upvoterIds.length);
-          }
-          return jsonResponse({ movieRequests: db.movieRequests });
-        }
-        if (body.action === 'UPDATE_MOVIE_REQUEST_STATUS') {
-          if (body.status === 'delete') {
-            db.movieRequests = db.movieRequests.filter((r) => r.id !== body.requestId);
-          } else {
-            const item = db.movieRequests.find((r) => r.id === body.requestId);
-            if (item) item.status = 'added';
-          }
-          return jsonResponse({ movieRequests: db.movieRequests });
-        }
         if (body.action === 'SAVE_WATCHLIST') {
           db.watchlistsByUser[body.userId || 'default'] = [body.watchlist];
           return jsonResponse({ watchlists: db.watchlistsByUser[body.userId || 'default'] });
@@ -285,8 +251,8 @@ export default {
         const nowIso = new Date().toISOString();
         const nowMs = Date.now();
         const roomId = `room-${code.toLowerCase()}-${nowMs.toString(36)}`;
-        const platform = body.platform === 'netflix' ? 'netflix' : 'youtube';
-        const videoId = body.videoId || (platform === 'netflix' ? '81446667' : 'fXmAurh012s');
+        const platform = 'netflix';
+        const videoId = body.videoId || SUPPORTED_NETFLIX_TITLES[0].watchId;
         const videoTitle = body.videoTitle || 'Arcane — S1:E1 Welcome to the Playground';
 
         const hostParticipant: RoomParticipant = {
@@ -383,7 +349,7 @@ export default {
               hostId: body.user?.id || 'usr-elena-host',
               hostName: body.user?.displayName || 'Cinema Host',
               hostAvatar: body.user?.avatarUrl || AVATAR_PRESETS[0],
-              platform: isNfx ? 'netflix' : 'youtube',
+              platform: 'netflix',
               privacy: 'public',
               hasPassword: false,
               allowGuests: true,
@@ -394,15 +360,11 @@ export default {
               controlPermission: 'everyone',
               playback: {
                 roomId: `room-${code.toLowerCase()}`,
-                platform: isNfx ? 'netflix' : 'youtube',
-                videoId: isNfx ? '81446667' : 'fXmAurh012s',
-                videoTitle: isNfx
-                  ? SUPPORTED_NETFLIX_TITLES[0].title
-                  : CURATED_YOUTUBE_VIDEOS[0].title,
-                videoThumbnail: isNfx
-                  ? SUPPORTED_NETFLIX_TITLES[0].posterUrl
-                  : CURATED_YOUTUBE_VIDEOS[0].thumbnailUrl,
-                netflixWatchId: isNfx ? '81446667' : undefined,
+                platform: 'netflix',
+                videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
+                videoTitle: SUPPORTED_NETFLIX_TITLES[0].title,
+                videoThumbnail: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
+                netflixWatchId: SUPPORTED_NETFLIX_TITLES[0].watchId,
                 isPlaying: false,
                 currentTime: 0,
                 playbackRate: 1,
@@ -611,16 +573,6 @@ export default {
           Connection: 'keep-alive',
           ...corsHeaders,
         },
-      });
-    }
-
-    // 5. /api/livekit/token
-    if (url.pathname === '/api/livekit/token' && req.method === 'POST') {
-      const body = (await req.json()) as { roomCode?: string };
-      return jsonResponse({
-        mode: 'webrtc-mesh',
-        roomCode: body.roomCode || 'VYB-4K1',
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
     }
 
