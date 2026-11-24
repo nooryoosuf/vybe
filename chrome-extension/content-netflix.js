@@ -263,7 +263,7 @@
     inviteBtn.style.cssText =
       'background:rgba(109,93,251,0.28);color:#fff;border:1px solid rgba(109,93,251,0.6);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;';
     inviteBtn.onclick = () => {
-      const url = `${vybeBaseUrl}/room/${activeRoomCode}`;
+      const url = `${getEffectiveVybeUrl()}/room/${activeRoomCode}`;
       navigator.clipboard.writeText(url).catch(() => {});
       inviteBtn.textContent = 'Copied Link!';
       setTimeout(() => {
@@ -296,10 +296,20 @@
     document.body.appendChild(rootDock);
   }
 
+  function getEffectiveVybeUrl() {
+    if (!vybeBaseUrl || vybeBaseUrl.includes('localhost:3100')) {
+      return 'https://vybe.nooryoosuf.com';
+    }
+    return vybeBaseUrl;
+  }
+
   function openSidebarIframe() {
     if (sidebarFrame) return;
+    const base = getEffectiveVybeUrl();
     sidebarFrame = document.createElement('iframe');
-    sidebarFrame.src = `${vybeBaseUrl}/room/${activeRoomCode}`;
+    sidebarFrame.src = `${base}/room/${activeRoomCode}?embed=chat`;
+    sidebarFrame.title = 'VYBE Watch Party Live Chat';
+    sidebarFrame.allow = 'autoplay; clipboard-write';
     sidebarFrame.style.cssText =
       'position:fixed;top:0;right:0;bottom:0;width:390px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;box-shadow:-16px 0 40px rgba(0,0,0,0.8);';
     document.body.appendChild(sidebarFrame);

@@ -580,18 +580,26 @@ export default {
     if (url.pathname === '/room' || url.pathname === '/room/') {
       const roomHtml = new URL('/room.html', url.origin);
       const res = await env.ASSETS.fetch(new Request(roomHtml.toString(), req));
-      if (res.ok) return new Response(res.body, { status: 200, headers: res.headers });
+      if (res.ok) {
+        const h = new Headers(res.headers);
+        h.delete('x-frame-options');
+        h.set('Content-Security-Policy', "frame-ancestors 'self' https://*.netflix.com https://netflix.com https://*.nooryoosuf.com http://localhost:*");
+        return new Response(res.body, { status: 200, headers: h });
+      }
     }
 
     if (url.pathname.startsWith('/room/')) {
       const isTxt = url.pathname.endsWith('.txt');
-      const fallbackPath = isTxt ? '/room/VYB-4K1.txt' : '/room/VYB-4K1.html';
+      const fallbackPath = isTxt ? '/room/NFX-808.txt' : '/room/NFX-808.html';
       const fallbackUrl = new URL(fallbackPath, url.origin);
       const assetRes = await env.ASSETS.fetch(new Request(fallbackUrl.toString(), req));
       if (assetRes.ok) {
+        const h = new Headers(assetRes.headers);
+        h.delete('x-frame-options');
+        h.set('Content-Security-Policy', "frame-ancestors 'self' https://*.netflix.com https://netflix.com https://*.nooryoosuf.com http://localhost:*");
         return new Response(assetRes.body, {
           status: 200,
-          headers: assetRes.headers,
+          headers: h,
         });
       }
     }

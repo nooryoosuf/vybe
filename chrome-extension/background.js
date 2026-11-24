@@ -8,7 +8,7 @@
 // ============================================================================
 
 const DEFAULT_SESSION_STATE = {
-  vybeBaseUrl: 'http://localhost:3100',
+  vybeBaseUrl: 'https://vybe.nooryoosuf.com',
   roomCode: 'NFX-808',
   connected: true,
   lastWatchId: null,
@@ -36,12 +36,18 @@ const NETFLIX_TAB_PATTERNS = ['*://*.netflix.com/*'];
 async function getSessionState() {
   return new Promise((resolve) => {
     chrome.storage.local.get(['vybeSession'], (result) => {
+      let state = { ...DEFAULT_SESSION_STATE };
       if (result && result.vybeSession) {
-        resolve({ ...DEFAULT_SESSION_STATE, ...result.vybeSession });
-      } else {
-        chrome.storage.local.set({ vybeSession: DEFAULT_SESSION_STATE });
-        resolve(DEFAULT_SESSION_STATE);
+        state = { ...DEFAULT_SESSION_STATE, ...result.vybeSession };
       }
+      // Migrate any stale localhost:3100 stored during earlier testing
+      if (!state.vybeBaseUrl || state.vybeBaseUrl.includes('localhost:3100')) {
+        state.vybeBaseUrl = 'https://vybe.nooryoosuf.com';
+        chrome.storage.local.set({ vybeSession: state });
+      } else if (!result || !result.vybeSession) {
+        chrome.storage.local.set({ vybeSession: state });
+      }
+      resolve(state);
     });
   });
 }

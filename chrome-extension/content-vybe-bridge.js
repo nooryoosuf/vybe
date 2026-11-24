@@ -13,6 +13,7 @@
       chrome.runtime.sendMessage({
         type: 'SET_ROOM_CONFIG',
         roomCode: event.data.roomCode,
+        vybeBaseUrl: event.data.vybeBaseUrl || window.location.origin,
       });
     } else if (event.data.type === 'APPLY_REMOTE_SYNC') {
       chrome.runtime.sendMessage({

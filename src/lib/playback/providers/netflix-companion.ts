@@ -44,7 +44,12 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
     this.roomCode = code.toUpperCase();
     if (typeof window !== 'undefined') {
       window.postMessage(
-        { source: 'VYBE_WEB_APP', type: 'VYBE_ROOM_INIT', roomCode: this.roomCode },
+        {
+          source: 'VYBE_WEB_APP',
+          type: 'VYBE_ROOM_INIT',
+          roomCode: this.roomCode,
+          vybeBaseUrl: window.location.origin,
+        },
         '*'
       );
     }
@@ -88,7 +93,12 @@ export class NetflixCompanionProvider extends BasePlaybackProvider {
 
     window.addEventListener('message', this.bridgeListener);
     window.postMessage(
-      { source: 'VYBE_WEB_APP', type: 'VYBE_ROOM_INIT', roomCode: this.roomCode },
+      {
+        source: 'VYBE_WEB_APP',
+        type: 'VYBE_ROOM_INIT',
+        roomCode: this.roomCode,
+        vybeBaseUrl: window.location.origin,
+      },
       '*'
     );
   }

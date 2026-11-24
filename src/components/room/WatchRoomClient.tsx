@@ -1141,6 +1141,193 @@ export function WatchRoomClient() {
   const isOutOfSync =
     Math.abs(localDriftSec) > (user?.preferences?.autoSyncThresholdSec || 2.0);
 
+  const isEmbedChat =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('embed') === 'chat' ||
+      window.self !== window.top);
+
+  if (isEmbedChat) {
+    return (
+      <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#07080D] text-slate-100 font-sans select-none">
+        <FloatingReactionsLayer
+          reactions={floatingReactions}
+          onTriggerReaction={handleTriggerReaction}
+          onRemoveReaction={(id) =>
+            setFloatingReactions((prev) => prev.filter((r) => r.id !== id))
+          }
+          reducedMotion={user?.preferences?.reducedMotion}
+          isVideoHovered={false}
+        />
+
+        {/* Compact Header for Embedded Chat inside Netflix */}
+        <header className="flex items-center justify-between border-b border-white/[0.08] bg-[#0D0F18] px-3 py-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="VYBE" className="h-5 w-5 rounded-full shrink-0" />
+            <div className="min-w-0">
+              <span className="text-xs font-extrabold text-white tracking-wide block truncate">
+                {room.title}
+              </span>
+              <span className="text-[10px] text-vybe-accentLight font-mono">
+                {room.code}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyInvite}
+            className="flex items-center gap-1 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition shrink-0"
+            title="Copy Invite Link"
+          >
+            {copiedInvite ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-400" />
+                <span>Copied</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="h-3 w-3" />
+                <span>Invite</span>
+              </>
+            )}
+          </button>
+        </header>
+
+        {/* Sidebar Navigation Tabs */}
+        <div className="grid grid-cols-3 border-b border-white/[0.08] bg-[#0A0C14] p-1 gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
+              activeTab === 'chat'
+                ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5 text-vybe-accentLight" />
+            <span>Chat</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('queue')}
+            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
+              activeTab === 'queue'
+                ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <ListVideo className="h-3.5 w-3.5 text-vybe-accentLight" />
+            <span>Queue</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('participants')}
+            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
+              activeTab === 'participants'
+                ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Users className="h-3.5 w-3.5 text-emerald-400" />
+            <span>({joinedParticipants.length})</span>
+          </button>
+        </div>
+
+        {/* Active Tab Body */}
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          {activeTab === 'chat' && (
+            <LiveChatPanel
+              messages={messages}
+              currentUserId={user?.id || 'guest'}
+              isChatMuted={Boolean(currentParticipant?.isChatMuted)}
+              isFloatingMode={false}
+              onToggleFloatingMode={() => {}}
+              onSendMessage={handleSendChatMessage}
+              onToggleMessageReaction={handleToggleMessageReaction}
+              onQuickSceneReaction={handleTriggerReaction}
+            />
+          )}
+          {activeTab === 'queue' && (
+            <WatchQueuePanel
+              roomId={room.id}
+              queue={room.queue}
+              currentUserId={user?.id || 'guest'}
+              currentUserName={user?.displayName || 'Viewer'}
+              canControlPlayback={canControlPlayback}
+              onAddQueueItem={(item: QueueItem) =>
+                executeQueueAction({ queueOp: 'ADD', item })
+              }
+              onVoteQueueItem={(itemId, direction) =>
+                executeQueueAction({
+                  queueOp: 'VOTE',
+                  itemId,
+                  direction,
+                })
+              }
+              onMoveQueueItem={(itemId, dir) =>
+                executeQueueAction({ queueOp: 'MOVE', itemId, dir })
+              }
+              onRemoveQueueItem={(itemId) =>
+                executeQueueAction({ queueOp: 'REMOVE', itemId })
+              }
+              onPlayQueueItemNow={(itemId) =>
+                executeQueueAction({ queueOp: 'PLAY_ITEM', itemId })
+              }
+              onDirectSwitchMedia={(videoId, videoTitle, videoThumbnail) =>
+                handleDirectSwitchMedia(videoId, videoTitle, videoThumbnail)
+              }
+            />
+          )}
+          {activeTab === 'participants' && (
+            <div className="flex flex-col h-full overflow-y-auto p-3.5 space-y-4">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-slate-400">
+                  In Room ({joinedParticipants.length})
+                </div>
+                {joinedParticipants.map((p) => {
+                  const isSelf = p.userId === user?.id;
+                  return (
+                    <div
+                      key={p.userId}
+                      className="flex items-center justify-between rounded-xl bg-[#0D0F18] border border-white/[0.06] p-2.5"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={p.avatarUrl}
+                          alt={p.displayName}
+                          className="h-8 w-8 rounded-full object-cover shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-white truncate">
+                              {p.displayName}
+                            </span>
+                            {isSelf && (
+                              <span className="text-[10px] text-vybe-accentLight">
+                                (You)
+                              </span>
+                            )}
+                            {p.role === 'host' && (
+                              <Crown className="h-3 w-3 text-amber-400 shrink-0" />
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            @{p.username}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#07080D] text-slate-100">
       {/* ==================================================================== */}
