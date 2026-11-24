@@ -101,8 +101,16 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45 }}
-            className="mb-6 flex justify-center"
+            className="mb-6 flex flex-col items-center justify-center gap-3.5"
           >
+            <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full p-0.5 shadow-[0_0_35px_rgba(109,93,251,0.65)] ring-2 ring-white/20 transition-transform duration-300 hover:scale-105">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.svg"
+                alt="VYBE"
+                className="h-full w-full object-contain rounded-full"
+              />
+            </div>
             <span className="inline-flex items-center gap-2 rounded-full vybe-glass-pill px-4 py-1.5 text-xs font-medium text-slate-200">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>Synchronized Netflix Watch Parties</span>

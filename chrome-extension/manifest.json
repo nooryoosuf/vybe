@@ -16,9 +16,15 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "VYBE Watch Party Sync"
+    "default_title": "VYBE Watch Party Sync",
+    "default_icon": "icon.png"
   },
   "content_scripts": [
     {

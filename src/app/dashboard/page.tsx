@@ -312,8 +312,13 @@ export default function DashboardPage() {
                   <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-emerald-400 ring-2 ring-[#131624]" />
                 </div>
               ) : (
-                <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-full vybe-glass-pill text-vybe-accentLight">
-                  <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
+                <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-full shadow-[0_0_20px_rgba(109,93,251,0.55)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/logo.svg"
+                    alt="VYBE"
+                    className="h-full w-full object-contain rounded-full"
+                  />
                 </div>
               )}
 

@@ -40,9 +40,14 @@ export function Navbar({
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 rounded-full vybe-glass px-3 sm:px-5">
         {/* Brand Identity */}
         <div className="flex items-center gap-3 sm:gap-6 min-w-0">
-          <Link href="/" className="flex items-center gap-2 group pl-0.5 shrink-0">
-            <div className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-gradient-to-b from-[#8576FF] to-[#5645E8] shadow-[0_0_20px_rgba(109,93,251,0.55),inset_0_1px_0_0_rgba(255,255,255,0.4)] transition-transform duration-200 group-hover:scale-105">
-              <Tv className="h-4 w-4 text-white" />
+          <Link href="/" className="flex items-center gap-2.5 group pl-0.5 shrink-0">
+            <div className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full shadow-[0_0_20px_rgba(109,93,251,0.55)] transition-transform duration-200 group-hover:scale-105">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.svg"
+                alt="VYBE Logo"
+                className="h-full w-full object-contain rounded-full"
+              />
               <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
