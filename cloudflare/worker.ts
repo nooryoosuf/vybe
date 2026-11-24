@@ -578,11 +578,12 @@ export default {
 
     // 6. Serve Static Assets & Dynamic /room/[code] Route Fallback
     if (url.pathname === '/room' || url.pathname === '/room/') {
-      const roomHtml = new URL('/room.html', url.origin);
-      const res = await env.ASSETS.fetch(new Request(roomHtml.toString(), req));
-      if (res.ok) {
+      const fallbackUrl = new URL('/room/NFX-808', url.origin);
+      const res = await env.ASSETS.fetch(new Request(fallbackUrl.toString()));
+      if (res.ok || res.status === 200) {
         const h = new Headers(res.headers);
         h.delete('x-frame-options');
+        h.set('Content-Type', 'text/html; charset=utf-8');
         h.set('Content-Security-Policy', "frame-ancestors 'self' https://*.netflix.com https://netflix.com https://*.nooryoosuf.com http://localhost:*");
         return new Response(res.body, { status: 200, headers: h });
       }
@@ -590,12 +591,24 @@ export default {
 
     if (url.pathname.startsWith('/room/')) {
       const isTxt = url.pathname.endsWith('.txt');
-      const fallbackPath = isTxt ? '/room/NFX-808.txt' : '/room/NFX-808.html';
+      // Always target the clean URL without trailing .html so Cloudflare Assets never 307 redirects
+      const fallbackPath = isTxt ? '/room/NFX-808.txt' : '/room/NFX-808';
       const fallbackUrl = new URL(fallbackPath, url.origin);
-      const assetRes = await env.ASSETS.fetch(new Request(fallbackUrl.toString(), req));
-      if (assetRes.ok) {
+      let assetRes = await env.ASSETS.fetch(new Request(fallbackUrl.toString()));
+      
+      // If Cloudflare returns a redirect (301, 302, 307, 308), resolve destination
+      if (assetRes.status >= 300 && assetRes.status < 400) {
+        const loc = assetRes.headers.get('Location');
+        if (loc) {
+          const redirectUrl = new URL(loc, url.origin);
+          assetRes = await env.ASSETS.fetch(new Request(redirectUrl.toString()));
+        }
+      }
+
+      if (assetRes.ok || assetRes.status === 200) {
         const h = new Headers(assetRes.headers);
         h.delete('x-frame-options');
+        h.set('Content-Type', isTxt ? 'text/plain; charset=utf-8' : 'text/html; charset=utf-8');
         h.set('Content-Security-Policy', "frame-ancestors 'self' https://*.netflix.com https://netflix.com https://*.nooryoosuf.com http://localhost:*");
         return new Response(assetRes.body, {
           status: 200,

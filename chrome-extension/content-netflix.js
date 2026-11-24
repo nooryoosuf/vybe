@@ -13,7 +13,7 @@
   let isApplyingRemoteSync = false;
   let remoteGuardTimeout = null;
   let boundVideoElement = null;
-  let activeRoomCode = 'VYB-4K1';
+  let activeRoomCode = 'NFX-808';
   let vybeBaseUrl = 'https://vybe.nooryoosuf.com';
   let sidebarOpen = false;
   let lastReported = '';
@@ -341,13 +341,20 @@
     document.body.classList.add('vybe-chat-open');
 
     const base = getEffectiveVybeUrl();
+    const targetRoom = (activeRoomCode && activeRoomCode.trim()) || 'NFX-808';
     sidebarFrame = document.createElement('iframe');
     sidebarFrame.id = 'vybe-party-sidebar-frame';
-    sidebarFrame.src = `${base}/room/${activeRoomCode}?embed=chat`;
+    sidebarFrame.src = `${base}/room/${targetRoom}?embed=chat`;
     sidebarFrame.title = 'VYBE Watch Party Live Chat';
     sidebarFrame.allow = 'autoplay; clipboard-write';
     sidebarFrame.style.cssText =
-      `position:fixed;top:0;right:0;bottom:0;width:${SIDEBAR_WIDTH}px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;box-shadow:-16px 0 40px rgba(0,0,0,0.8);transition:opacity 0.2s ease;`;
+      `position:fixed;top:0;right:0;bottom:0;width:${SIDEBAR_WIDTH}px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;color-scheme:dark;box-shadow:-16px 0 40px rgba(0,0,0,0.8);`;
+
+    sidebarFrame.onerror = () => {
+      if (sidebarFrame && targetRoom !== 'NFX-808') {
+        sidebarFrame.src = `${base}/room/NFX-808?embed=chat`;
+      }
+    };
 
     const container = document.fullscreenElement || document.body;
     container.appendChild(sidebarFrame);

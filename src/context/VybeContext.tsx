@@ -75,7 +75,13 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
 
   const syncUserToServer = useCallback(async (profile: UserProfile) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+        }
+      } catch {
+        // Third-party iframe storage access blocked
+      }
       const res = await fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -84,7 +90,13 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (data?.user) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
+          try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(data.user));
+            }
+          } catch {
+            // Ignore storage restrictions
+          }
         }
       }
     } catch {
@@ -97,7 +109,14 @@ export function VybeProvider({ children }: { children: React.ReactNode }) {
 
     async function initAuth() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        let raw: string | null = null;
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            raw = localStorage.getItem(STORAGE_KEY);
+          }
+        } catch {
+          // Third-party iframe storage restriction
+        }
         if (raw) {
           const parsed = JSON.parse(raw) as UserProfile;
           if (parsed && parsed.id && mounted) {

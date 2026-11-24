@@ -77,8 +77,13 @@ export function WatchRoomClient() {
     queryCode ||
     pathCode ||
     (Array.isArray(params?.code) ? params.code[0] : params?.code) ||
-    'VYB-4K1';
+    'NFX-808';
   const roomCode = decodeURIComponent(rawCode).toUpperCase();
+
+  const isEmbedChat =
+    typeof window !== 'undefined' &&
+    (new URLSearchParams(window.location.search).get('embed') === 'chat' ||
+      window.self !== window.top);
 
   const {
     user,
@@ -1062,6 +1067,22 @@ export function WatchRoomClient() {
 
   // Loading state
   if (loadingRoom) {
+    if (isEmbedChat) {
+      return (
+        <div className="flex flex-col h-[100dvh] w-full bg-[#07080D] text-slate-100 items-center justify-center p-6 text-center select-none font-sans">
+          <div className="h-10 w-10 rounded-xl bg-vybe-accent/20 border border-vybe-accent/40 flex items-center justify-center animate-pulse mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="VYBE" className="h-6 w-6 rounded-full" />
+          </div>
+          <div className="text-xs font-bold text-white tracking-wide">
+            Connecting Party Chat...
+          </div>
+          <div className="text-[10px] text-vybe-accentLight font-mono mt-1">
+            Room {roomCode}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#07080D] flex flex-col items-center justify-center p-6">
         <div className="h-12 w-12 rounded-2xl bg-vybe-accent/20 border border-vybe-accent/40 flex items-center justify-center animate-pulse">
@@ -1079,6 +1100,30 @@ export function WatchRoomClient() {
 
   // Error or Kicked state
   if (roomError || !room || memberStatus === 'kicked') {
+    if (isEmbedChat) {
+      return (
+        <div className="flex flex-col h-[100dvh] w-full bg-[#07080D] text-slate-100 p-6 items-center justify-center text-center select-none font-sans">
+          <AlertTriangle className="h-8 w-8 text-rose-400 mb-2" />
+          <h1 className="text-xs font-bold text-white mb-1">
+            {memberStatus === 'kicked'
+              ? 'Removed from Watch Room'
+              : 'Party Chat Disconnected'}
+          </h1>
+          <p className="text-[11px] text-slate-400 mb-4 max-w-[260px] leading-relaxed">
+            {memberStatus === 'kicked'
+              ? 'The host removed you from this watch party.'
+              : roomError || 'Re-establishing live room channel...'}
+          </p>
+          <button
+            type="button"
+            onClick={() => joinAndHydrateRoom()}
+            className="rounded-full bg-gradient-to-r from-[#6D5DFB] to-[#7C3AED] hover:from-[#5b4aeb] hover:to-[#6d28d9] text-white px-4 py-1.5 text-xs font-bold transition shadow-md"
+          >
+            Retry Connection
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#07080D] flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-2xl bg-[#0D0F18] border border-white/10 p-6 text-center space-y-4">
@@ -1102,9 +1147,9 @@ export function WatchRoomClient() {
             </GlowButton>
             <GlowButton
               variant="primary"
-              onClick={() => router.push('/room/VYB-4K1')}
+              onClick={() => router.push('/room/NFX-808')}
             >
-              Join Featured Room (VYB-4K1)
+              Join Featured Room (NFX-808)
             </GlowButton>
           </div>
         </div>
@@ -1114,6 +1159,19 @@ export function WatchRoomClient() {
 
   // Waiting Room Gate
   if (memberStatus === 'waiting' && !isHost) {
+    if (isEmbedChat) {
+      return (
+        <div className="flex flex-col h-[100dvh] w-full bg-[#07080D] text-slate-100 p-6 items-center justify-center text-center select-none font-sans">
+          <Shield className="h-8 w-8 text-amber-400 animate-pulse mb-2" />
+          <h1 className="text-xs font-bold text-white mb-1">
+            Waiting for Host Approval
+          </h1>
+          <p className="text-[11px] text-slate-400 mb-2 max-w-[260px] leading-relaxed">
+            The host has a waiting room enabled. You will automatically enter when admitted.
+          </p>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-[#07080D] flex items-center justify-center p-4">
         <div className="max-w-md w-full rounded-2xl bg-[#0D0F18] border border-white/10 p-7 text-center space-y-4">
@@ -1137,15 +1195,10 @@ export function WatchRoomClient() {
     );
   }
 
-  const joinedParticipants = room.participants.filter((p) => p.status === 'joined');
-  const waitingParticipants = room.participants.filter((p) => p.status === 'waiting');
+  const joinedParticipants = room?.participants ? room.participants.filter((p) => p.status === 'joined') : [];
+  const waitingParticipants = room?.participants ? room.participants.filter((p) => p.status === 'waiting') : [];
   const isOutOfSync =
     Math.abs(localDriftSec) > (user?.preferences?.autoSyncThresholdSec || 2.0);
-
-  const isEmbedChat =
-    typeof window !== 'undefined' &&
-    (new URLSearchParams(window.location.search).get('embed') === 'chat' ||
-      window.self !== window.top);
 
   if (isEmbedChat) {
     return (
