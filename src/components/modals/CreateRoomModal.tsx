@@ -85,9 +85,9 @@ export function CreateRoomModal({
         waitingRoomEnabled,
         participantLimit,
         controlPermission,
-        videoId: watchId,
-        videoTitle: initialNetflixTitle || meta.title,
-        videoThumbnail: meta.posterUrl,
+        videoId: initialNetflixWatchId || '',
+        videoTitle: initialNetflixTitle || (initialNetflixWatchId ? meta.title : 'Netflix Watch Party'),
+        videoThumbnail: initialNetflixWatchId ? meta.posterUrl : '',
       };
 
       // Always build local room object first so it is immediately available

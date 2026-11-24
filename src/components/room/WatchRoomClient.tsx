@@ -429,9 +429,9 @@ export function WatchRoomClient() {
             waitingRoomEnabled: false,
             participantLimit: 25,
             controlPermission: 'everyone',
-            videoId: SUPPORTED_NETFLIX_TITLES[0].watchId,
-            videoTitle: SUPPORTED_NETFLIX_TITLES[0].title,
-            videoThumbnail: SUPPORTED_NETFLIX_TITLES[0].posterUrl,
+            videoId: '',
+            videoTitle: 'Netflix Watch Party',
+            videoThumbnail: '',
           });
           autoCreated.code = roomCode;
           saveLocalRoom(autoCreated);
@@ -1278,6 +1278,7 @@ export function WatchRoomClient() {
               onPause={handleCompanionPause}
               onSeek={handleCompanionSeek}
               onRequestResync={handleRequestResync}
+              onSwitchTitle={handleDirectSwitchMedia}
             />
 
             {/* Animated Floating Reactions Layer */}

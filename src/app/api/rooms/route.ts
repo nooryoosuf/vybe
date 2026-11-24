@@ -62,9 +62,8 @@ export async function POST(req: NextRequest) {
     const nowMs = Date.now();
     const roomId = `room-${code.toLowerCase()}-${nowMs.toString(36)}`;
     const platform = 'netflix';
-    const videoId =
-      body.videoId || body.netflixWatchId || SUPPORTED_NETFLIX_TITLES[0].watchId;
-    const videoTitle = body.videoTitle || SUPPORTED_NETFLIX_TITLES[0].title;
+    const videoId = body.videoId || body.netflixWatchId || '';
+    const videoTitle = body.videoTitle || 'Netflix Watch Party';
 
     const hostParticipant: RoomParticipant = {
       userId: body.hostId,
