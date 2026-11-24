@@ -13,8 +13,8 @@
   let isApplyingRemoteSync = false;
   let remoteGuardTimeout = null;
   let boundVideoElement = null;
-  let activeRoomCode = 'NFX-808';
-  let vybeBaseUrl = 'http://localhost:3100';
+  let activeRoomCode = 'VYB-4K1';
+  let vybeBaseUrl = 'https://vybe.nooryoosuf.com';
   let sidebarOpen = false;
   let lastReported = '';
 
