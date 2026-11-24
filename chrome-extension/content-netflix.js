@@ -240,15 +240,42 @@
   // Injected "VYBE • ROOM — Open Party Chat" dock on netflix.com
   // ==========================================================================
 
+  const SIDEBAR_WIDTH = 360;
+  const STYLE_ID = 'vybe-viewport-compactor';
   let rootDock = null;
+  let toggleSidebarBtn = null;
   let sidebarFrame = null;
+
+  function injectViewportStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      body.vybe-chat-open {
+        width: calc(100vw - ${SIDEBAR_WIDTH}px) !important;
+        margin-right: ${SIDEBAR_WIDTH}px !important;
+        overflow-x: hidden !important;
+        transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), margin-right 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      }
+      body.vybe-chat-open #appMountPoint,
+      body.vybe-chat-open .watch-video {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      body.vybe-chat-open video {
+        max-width: 100% !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
 
   function ensureOverlayDock() {
     if (rootDock) return;
 
     rootDock = document.createElement('div');
+    rootDock.id = 'vybe-netflix-pill-dock';
     rootDock.style.cssText =
-      'position:fixed;top:16px;right:18px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(13,15,24,0.92);backdrop-filter:blur(18px);color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:6px 14px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,0.65);';
+      'position:fixed;top:16px;right:18px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(13,15,24,0.94);backdrop-filter:blur(18px);color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:999px;padding:6px 14px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;font-weight:700;box-shadow:0 12px 32px rgba(0,0,0,0.65);transition:right 0.28s cubic-bezier(0.16,1,0.3,1);user-select:none;';
 
     const statusDot = document.createElement('span');
     statusDot.style.cssText =
@@ -270,21 +297,16 @@
       }, 2000);
     };
 
-    const toggleSidebarBtn = document.createElement('button');
+    toggleSidebarBtn = document.createElement('button');
     toggleSidebarBtn.textContent = 'Open Party Chat';
     toggleSidebarBtn.style.cssText =
       'background:linear-gradient(90deg,#6D5DFB,#7C3AED);color:#fff;border:none;border-radius:999px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;';
     toggleSidebarBtn.onclick = () => {
       sidebarOpen = !sidebarOpen;
       if (sidebarOpen) {
-        toggleSidebarBtn.textContent = 'Hide Chat';
         openSidebarIframe();
       } else {
-        toggleSidebarBtn.textContent = 'Open Party Chat';
-        if (sidebarFrame) {
-          sidebarFrame.remove();
-          sidebarFrame = null;
-        }
+        closeSidebarIframe();
       }
     };
 
@@ -292,7 +314,9 @@
     rootDock.appendChild(label);
     rootDock.appendChild(inviteBtn);
     rootDock.appendChild(toggleSidebarBtn);
-    document.body.appendChild(rootDock);
+
+    const container = document.fullscreenElement || document.body;
+    container.appendChild(rootDock);
   }
 
   function getEffectiveVybeUrl() {
@@ -304,13 +328,75 @@
 
   function openSidebarIframe() {
     if (sidebarFrame) return;
+    sidebarOpen = true;
+    if (toggleSidebarBtn) {
+      toggleSidebarBtn.textContent = 'Hide Chat';
+    }
+    // Reposition pill smoothly to the left of the sidebar so it never obscures chat
+    if (rootDock) {
+      rootDock.style.right = `${SIDEBAR_WIDTH + 14}px`;
+    }
+
+    injectViewportStyles();
+    document.body.classList.add('vybe-chat-open');
+
     const base = getEffectiveVybeUrl();
     sidebarFrame = document.createElement('iframe');
+    sidebarFrame.id = 'vybe-party-sidebar-frame';
     sidebarFrame.src = `${base}/room/${activeRoomCode}?embed=chat`;
     sidebarFrame.title = 'VYBE Watch Party Live Chat';
     sidebarFrame.allow = 'autoplay; clipboard-write';
     sidebarFrame.style.cssText =
-      'position:fixed;top:0;right:0;bottom:0;width:390px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;box-shadow:-16px 0 40px rgba(0,0,0,0.8);';
-    document.body.appendChild(sidebarFrame);
+      `position:fixed;top:0;right:0;bottom:0;width:${SIDEBAR_WIDTH}px;height:100vh;z-index:2147483646;border:none;border-left:1px solid rgba(255,255,255,0.14);background:#07080D;box-shadow:-16px 0 40px rgba(0,0,0,0.8);transition:opacity 0.2s ease;`;
+
+    const container = document.fullscreenElement || document.body;
+    container.appendChild(sidebarFrame);
+
+    // Notify Netflix video canvas to adaptively resize to the compacted screen width
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
   }
+
+  function closeSidebarIframe() {
+    sidebarOpen = false;
+    if (toggleSidebarBtn) {
+      toggleSidebarBtn.textContent = 'Open Party Chat';
+    }
+    // Return pill to top-right edge
+    if (rootDock) {
+      rootDock.style.right = '18px';
+    }
+    if (sidebarFrame) {
+      sidebarFrame.remove();
+      sidebarFrame = null;
+    }
+    document.body.classList.remove('vybe-chat-open');
+
+    // Notify Netflix video canvas to restore full width
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }
+
+  // Handle messages from the embedded chat iframe (e.g. clicking the 'X' button inside the chat header)
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.source === 'VYBE_EMBED_CHAT') {
+      if (event.data.type === 'CLOSE_SIDEBAR') {
+        closeSidebarIframe();
+      }
+    }
+  });
+
+  // Keep dock and sidebar visible even if user toggles HTML5 full-screen on Netflix
+  document.addEventListener('fullscreenchange', () => {
+    const container = document.fullscreenElement || document.body;
+    if (rootDock && rootDock.parentElement !== container) {
+      container.appendChild(rootDock);
+    }
+    if (sidebarFrame && sidebarFrame.parentElement !== container) {
+      container.appendChild(sidebarFrame);
+    }
+    window.dispatchEvent(new Event('resize'));
+  });
 })();

@@ -5,3 +5,6 @@ out
 .vybe-db.json
 *.tsbuildinfo
 next-env.d.ts
+.wrangler
+*.ps1
+

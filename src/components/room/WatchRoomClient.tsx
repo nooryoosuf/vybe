@@ -25,6 +25,7 @@ import {
   ArrowLeft,
   Sparkles,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { useVybe } from '@/context/VybeContext';
 import {
@@ -1173,32 +1174,49 @@ export function WatchRoomClient() {
               </span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleCopyInvite}
-            className="flex items-center gap-1 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition shrink-0"
-            title="Copy Invite Link"
-          >
-            {copiedInvite ? (
-              <>
-                <Check className="h-3 w-3 text-emerald-400" />
-                <span>Copied</span>
-              </>
-            ) : (
-              <>
-                <Share2 className="h-3 w-3" />
-                <span>Invite</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyInvite}
+              className="flex items-center gap-1 rounded-full bg-white/[0.08] hover:bg-white/[0.14] px-2.5 py-1 text-[11px] font-semibold text-slate-200 transition shrink-0"
+              title="Copy Invite Link"
+            >
+              {copiedInvite ? (
+                <>
+                  <Check className="h-3 w-3 text-emerald-400" />
+                  <span>Copied</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="h-3 w-3" />
+                  <span>Invite</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.parent.postMessage(
+                    { source: 'VYBE_EMBED_CHAT', type: 'CLOSE_SIDEBAR' },
+                    '*'
+                  );
+                }
+              }}
+              className="p-1 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-slate-300 hover:text-white transition"
+              title="Close Chat"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </header>
 
-        {/* Sidebar Navigation Tabs */}
-        <div className="grid grid-cols-3 border-b border-white/[0.08] bg-[#0A0C14] p-1 gap-1 shrink-0">
+        {/* Sidebar Navigation Tabs — Chat & Viewers only */}
+        <div className="grid grid-cols-2 border-b border-white/[0.08] bg-[#0A0C14] p-1 gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('chat')}
-            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1.5 rounded-full py-1 text-xs font-bold transition ${
               activeTab === 'chat'
                 ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
                 : 'text-slate-400 hover:text-white'
@@ -1209,27 +1227,15 @@ export function WatchRoomClient() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('queue')}
-            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
-              activeTab === 'queue'
-                ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <ListVideo className="h-3.5 w-3.5 text-vybe-accentLight" />
-            <span>Queue</span>
-          </button>
-          <button
-            type="button"
             onClick={() => setActiveTab('participants')}
-            className={`flex items-center justify-center gap-1 rounded-full py-1 text-xs font-bold transition ${
+            className={`flex items-center justify-center gap-1.5 rounded-full py-1 text-xs font-bold transition ${
               activeTab === 'participants'
                 ? 'bg-[#161A2B] text-white border border-white/10 shadow-sm'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
             <Users className="h-3.5 w-3.5 text-emerald-400" />
-            <span>({joinedParticipants.length})</span>
+            <span>Viewers ({joinedParticipants.length})</span>
           </button>
         </div>
 
@@ -1245,37 +1251,6 @@ export function WatchRoomClient() {
               onSendMessage={handleSendChatMessage}
               onToggleMessageReaction={handleToggleMessageReaction}
               onQuickSceneReaction={handleTriggerReaction}
-            />
-          )}
-          {activeTab === 'queue' && (
-            <WatchQueuePanel
-              roomId={room.id}
-              queue={room.queue}
-              currentUserId={user?.id || 'guest'}
-              currentUserName={user?.displayName || 'Viewer'}
-              canControlPlayback={canControlPlayback}
-              onAddQueueItem={(item: QueueItem) =>
-                executeQueueAction({ queueOp: 'ADD', item })
-              }
-              onVoteQueueItem={(itemId, direction) =>
-                executeQueueAction({
-                  queueOp: 'VOTE',
-                  itemId,
-                  direction,
-                })
-              }
-              onMoveQueueItem={(itemId, dir) =>
-                executeQueueAction({ queueOp: 'MOVE', itemId, dir })
-              }
-              onRemoveQueueItem={(itemId) =>
-                executeQueueAction({ queueOp: 'REMOVE', itemId })
-              }
-              onPlayQueueItemNow={(itemId) =>
-                executeQueueAction({ queueOp: 'PLAY_ITEM', itemId })
-              }
-              onDirectSwitchMedia={(videoId, videoTitle, videoThumbnail) =>
-                handleDirectSwitchMedia(videoId, videoTitle, videoThumbnail)
-              }
             />
           )}
           {activeTab === 'participants' && (
