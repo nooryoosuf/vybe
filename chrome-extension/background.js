@@ -86,7 +86,14 @@ function reRequestStateFromNetflixTabs() {
     for (const tab of tabs) {
       if (!tab.id) continue;
       try {
-        chrome.tabs.sendMessage(tab.id, { type: 'GET_EXTENSION_STATE' });
+        const p = chrome.tabs.sendMessage(tab.id, { type: 'GET_EXTENSION_STATE' }, () => {
+          if (chrome.runtime.lastError) {
+            // Content script not loaded or tab closed
+          }
+        });
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {});
+        }
       } catch {
         // Ignore frames where the content script is not injected
       }
@@ -237,9 +244,18 @@ function broadcastToTargetTabs(payload) {
     if (!tabs || !tabs.length) return;
     for (const tab of tabs) {
       if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, payload).catch(() => {
-          // Ignore frames where content script is not yet injected or loaded
-        });
+        try {
+          const p = chrome.tabs.sendMessage(tab.id, payload, () => {
+            if (chrome.runtime.lastError) {
+              // Frame without content script
+            }
+          });
+          if (p && typeof p.catch === 'function') {
+            p.catch(() => {});
+          }
+        } catch {
+          // Tab or extension context error
+        }
       }
     }
   });

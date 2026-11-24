@@ -18,6 +18,26 @@
   let sidebarOpen = false;
   let lastReported = '';
 
+  function safeSendMessage(payload, callback) {
+    try {
+      if (!chrome.runtime || !chrome.runtime.id) return;
+      const res = chrome.runtime.sendMessage(payload, (response) => {
+        if (chrome.runtime.lastError) {
+          // Worker sleeping or tab transitioning
+          return;
+        }
+        if (typeof callback === 'function') {
+          callback(response);
+        }
+      });
+      if (res && typeof res.catch === 'function') {
+        res.catch(() => {});
+      }
+    } catch {
+      // Extension context invalidated during reload
+    }
+  }
+
   // ==========================================================================
   // Netflix playback detection
   // ==========================================================================
@@ -68,20 +88,16 @@
     if (!force && lastReported === key) return;
     lastReported = key;
 
-    try {
-      chrome.runtime.sendMessage({
-        type: 'NETFLIX_TAB_HEARTBEAT',
-        roomCode: activeRoomCode,
-        pageType: info.pageType,
-        watchId: info.watchId,
-        isPlaying: playing,
-        isBuffering,
-        currentTime: cur,
-        detectedAt: Date.now(),
-      });
-    } catch {
-      // Background worker suspended — retry on next poll.
-    }
+    safeSendMessage({
+      type: 'NETFLIX_TAB_HEARTBEAT',
+      roomCode: activeRoomCode,
+      pageType: info.pageType,
+      watchId: info.watchId,
+      isPlaying: playing,
+      isBuffering,
+      currentTime: cur,
+      detectedAt: Date.now(),
+    });
   }
 
   function bindToVideoElement() {
@@ -93,17 +109,13 @@
       if (isApplyingRemoteSync) return;
       const info = detectNetflixPageInfo();
       if (info.pageType !== 'watch') return;
-      try {
-        chrome.runtime.sendMessage({
-          type: 'NETFLIX_LOCAL_ACTION',
-          roomCode: activeRoomCode,
-          watchId: info.watchId,
-          isPlaying: wantPlay,
-          currentTime: video.currentTime,
-        });
-      } catch {
-        // Worker suspended — poll will recover.
-      }
+      safeSendMessage({
+        type: 'NETFLIX_LOCAL_ACTION',
+        roomCode: activeRoomCode,
+        watchId: info.watchId,
+        isPlaying: wantPlay,
+        currentTime: video.currentTime,
+      });
     };
 
     video.addEventListener('play', () => handleUserAction(true));
@@ -142,28 +154,23 @@
     const now = Date.now();
     if (now - lastStateRequest < 15000) return;
     lastStateRequest = now;
-    try {
-      chrome.runtime.sendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
-        if (!res || !res.state) return;
-        if (res.state.roomCode) {
-          const nextCode = String(res.state.roomCode).toUpperCase();
-          if (nextCode !== activeRoomCode) {
-            activeRoomCode = nextCode;
-            // Broadcast the (re-)paired room so the web app sees CONFIG_UPDATED
-            const p = chrome.runtime.sendMessage({
-              source: 'VYBE_NETFLIX_EXTENSION',
-              type: 'CONFIG_UPDATED',
-              roomCode: activeRoomCode,
-            });
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-          }
+    safeSendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
+      if (!res || !res.state) return;
+      if (res.state.roomCode) {
+        const nextCode = String(res.state.roomCode).toUpperCase();
+        if (nextCode !== activeRoomCode) {
+          activeRoomCode = nextCode;
+          // Broadcast the (re-)paired room so the web app sees CONFIG_UPDATED
+          safeSendMessage({
+            source: 'VYBE_NETFLIX_EXTENSION',
+            type: 'CONFIG_UPDATED',
+            roomCode: activeRoomCode,
+          });
         }
-        if (res.state.vybeBaseUrl) vybeBaseUrl = res.state.vybeBaseUrl;
-        reportPlayback(bindToVideoElement(), true);
-      });
-    } catch {
-      // Worker suspended — the poll timer recovers on the next tick.
-    }
+      }
+      if (res.state.vybeBaseUrl) vybeBaseUrl = res.state.vybeBaseUrl;
+      reportPlayback(bindToVideoElement(), true);
+    });
   }
 
   requestExtensionState();
@@ -175,20 +182,16 @@
     const roomParam = params.get('vybeRoom');
     if (roomParam) {
       activeRoomCode = roomParam.toUpperCase();
-      try {
-        chrome.runtime.sendMessage({
-          type: 'SET_ROOM_CONFIG',
-          roomCode: activeRoomCode,
-        });
-      } catch {
-        // Worker not ready yet.
-      }
+      safeSendMessage({
+        type: 'SET_ROOM_CONFIG',
+        roomCode: activeRoomCode,
+      });
     }
   } catch {
     // ignore
   }
 
-  chrome.runtime.sendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
+  safeSendMessage({ type: 'GET_EXTENSION_STATE' }, (res) => {
     if (res && res.state) {
       if (res.state.roomCode) activeRoomCode = String(res.state.roomCode).toUpperCase();
       if (res.state.vybeBaseUrl) vybeBaseUrl = res.state.vybeBaseUrl;
@@ -211,17 +214,13 @@
     const currentInfo = detectNetflixPageInfo();
     const commandedId = String(msg.watchId || '').toUpperCase();
     if (commandedId && currentInfo.watchId && commandedId !== currentInfo.watchId) {
-      try {
-        chrome.runtime.sendMessage({
-          source: 'VYBE_NETFLIX_EXTENSION',
-          type: 'CMD_REJECTED_TITLE_MISMATCH',
-          roomCode: activeRoomCode,
-          expectedWatchId: currentInfo.watchId,
-          commandedWatchId: commandedId,
-        });
-      } catch {
-        // ignore
-      }
+      safeSendMessage({
+        source: 'VYBE_NETFLIX_EXTENSION',
+        type: 'CMD_REJECTED_TITLE_MISMATCH',
+        roomCode: activeRoomCode,
+        expectedWatchId: currentInfo.watchId,
+        commandedWatchId: commandedId,
+      });
       return;
     }
 
